@@ -1,0 +1,120 @@
+name: 构建 & 发布
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 构建桌面客户端 ──────────────────────────────────
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch: arm64,x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+    name: 构建 ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 React
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+          REACT_APP_API_URL: ${{ secrets.API_URL }}
+
+      - name: 打包 Electron (macOS)
+        if: matrix.platform == 'mac'
+        run: npm run build:mac -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: 打包 Electron (Windows)
+        if: matrix.platform == 'win'
+        run: npm run build:win -- --publish never
+
+      - name: 打包 Electron (Linux)
+        if: matrix.platform == 'linux'
+        run: npm run build:linux -- --publish never
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: qiwen-${{ matrix.platform }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 5
+          if-no-files-found: warn
+
+  # ── 发布 Release ─────────────────────────────────────
+  release:
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    name: 发布 Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+
+  # ── 部署服务端 ───────────────────────────────────────
+  deploy-server:
+    needs: release
+    runs-on: ubuntu-latest
+    name: 部署服务端
+    if: "!contains(github.ref, '-beta')"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/qiwen
+            git pull origin main
+            cd deploy/docker
+            docker compose --env-file /opt/qiwen/.env pull api
+            docker compose --env-file /opt/qiwen/.env up -d --no-deps api
+            docker compose exec -T api npx prisma migrate deploy
+            docker image prune -f
+            echo "✅ 部署完成: $(date)"

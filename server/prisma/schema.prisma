@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ─────────────────────────────────────────────
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  username        String    @unique
+  passwordHash    String
+  displayName     String
+  avatar          String?
+  bio             String?
+  plan            Plan      @default(FREE)
+  isVerified      Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  sessions        Session[]
+  workspaces      Workspace[]
+  documents       Document[]
+  refreshTokens   RefreshToken[]
+  emailVerTokens  EmailVerification[]
+  passwordResets  PasswordReset[]
+  apiKeys         ApiKey[]
+  usageStats      UsageStat[]
+
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+enum Plan {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+// ── Sessions ──────────────────────────────────────────
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  deviceName  String?
+  deviceType  String?
+  ipAddress   String?
+  userAgent   String?
+  lastSeenAt  DateTime @default(now())
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ── Refresh tokens ────────────────────────────────────
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ── Email verification ────────────────────────────────
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique @default(uuid())
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
+}
+
+// ── Password reset ────────────────────────────────────
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique @default(uuid())
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
+}
+
+// ── API Keys ──────────────────────────────────────────
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String
+  name        String
+  keyHash     String    @unique
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ── Workspaces (cloud-synced) ─────────────────────────
+model Workspace {
+  id          String     @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  icon        String     @default("📁")
+  color       String     @default("#c8a96e")
+  profession  String     @default("general")
+  isDefault   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   Document[]
+
+  @@index([userId])
+  @@map("workspaces")
+}
+
+// ── Documents (cloud backup) ──────────────────────────
+model Document {
+  id           String    @id @default(uuid())
+  userId       String
+  workspaceId  String
+  title        String    @default("无标题")
+  content      String    @default("")
+  contentType  String    @default("markdown")
+  wordCount    Int       @default(0)
+  charCount    Int       @default(0)
+  isFavorite   Boolean   @default(false)
+  isArchived   Boolean   @default(false)
+  tags         String[]
+  clientId     String?   // Local device ID for sync
+  syncVersion  Int       @default(1)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@map("documents")
+}
+
+// ── Usage stats ───────────────────────────────────────
+model UsageStat {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime @default(now()) @db.Date
+  wordsWritten Int     @default(0)
+  aiTokensUsed Int    @default(0)
+  docsCreated  Int    @default(0)
+  loginCount   Int    @default(0)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@map("usage_stats")
+}

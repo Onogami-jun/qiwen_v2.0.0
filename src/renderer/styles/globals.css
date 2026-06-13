@@ -1,0 +1,501 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Design Tokens ─────────────────────────────────── */
+:root {
+  /* ── Core backgrounds — 深黑基础，微蓝调，有层次 ── */
+  --bg-base:      #0d0d12;
+  --bg-surface:   #121218;
+  --bg-surface2:  #17171f;
+  --bg-surface3:  #1d1d27;
+  --bg-hover:     rgba(255, 255, 255, 0.045);
+  --bg-active:    rgba(200, 169, 110, 0.08);
+
+  /* ── Activity bar (最左窄栏) — 更深 ── */
+  --bg-activitybar: #0a0a0e;
+
+  /* ── Sidebar panel ── */
+  --bg-sidebar:   #111116;
+
+  /* ── Editor ── */
+  --bg-editor:    #0f0f14;
+
+  /* ── Borders ── */
+  --border:       rgba(255, 255, 255, 0.06);
+  --border-md:    rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  /* ── Text ── */
+  --text-primary:   #e2e0da;
+  --text-secondary: #8a8880;
+  --text-tertiary:  #52504e;
+  --text-disabled:  #333230;
+
+  /* ── Accent — 暖金，保持品牌色 ── */
+  --accent:         #c8a96e;
+  --accent-dim:     #7a6540;
+  --accent-bg:      rgba(200, 169, 110, 0.08);
+  --accent-border:  rgba(200, 169, 110, 0.18);
+  --accent-glow:    rgba(200, 169, 110, 0.12);
+
+  /* ── Semantic colors ── */
+  --color-success: #4caf7d;
+  --color-warning: #e8a030;
+  --color-danger:  #e05c5c;
+  --color-info:    #4488dd;
+  --color-purple:  #9d7de0;
+
+  /* ── Typography ── */
+  --font-sans:  -apple-system, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --font-serif: 'Noto Serif SC', 'Georgia', serif;
+  --font-mono:  'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+
+  /* ── VSCode-style layout dimensions ── */
+  --activitybar-width: 48px;   /* 最左边图标栏 */
+  --sidebar-width: 240px;      /* 可展开的侧边栏面板 */
+  --right-panel-width: 260px;
+  --titlebar-height: 36px;
+  --toolbar-height: 40px;
+  --tabbar-height: 34px;
+  --statusbar-height: 22px;
+
+  /* ── Easing ── */
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth:   cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-sharp:    cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-apple:    cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* ── Radius — 苹果风格圆角 ── */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  /* ── Shadow ── */
+  --shadow-sm:  0 1px 4px rgba(0,0,0,0.3);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.5);
+  --shadow-xl:  0 16px 48px rgba(0,0,0,0.6);
+}
+
+/* ── Reset ─────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+[contenteditable], input, textarea, .selectable {
+  user-select: text;
+}
+
+/* ── Scrollbars ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+
+/* ── Focus ──────────────────────────────────────────── */
+:focus-visible {
+  outline: 1.5px solid rgba(200, 169, 110, 0.55);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Selection ──────────────────────────────────────── */
+::selection {
+  background: rgba(200, 169, 110, 0.22);
+  color: var(--text-primary);
+}
+
+/* ── App root ───────────────────────────────────────── */
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-base);
+}
+
+/* ── Animations ─────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
+}
+
+/* ── Utility animations ─────────────────────────────── */
+.animate-fade-in    { animation: fadeIn 0.2s var(--ease-smooth) both; }
+.animate-slide-up   { animation: slideInUp 0.3s var(--ease-smooth) both; }
+.animate-slide-left { animation: slideInLeft 0.3s var(--ease-smooth) both; }
+.animate-scale-in   { animation: scaleIn 0.25s var(--ease-spring) both; }
+.delay-50  { animation-delay: 50ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+
+/* ── Loading skeleton ───────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg, var(--bg-surface2) 25%, var(--bg-surface3) 50%, var(--bg-surface2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Overlay ────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  z-index: 200;
+  animation: fadeIn 0.18s ease;
+}
+
+/* ── Tooltip ────────────────────────────────────────── */
+.tooltip {
+  position: absolute;
+  background: var(--bg-surface3);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-md);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: var(--shadow-md);
+  animation: slideInDown 0.12s var(--ease-smooth);
+}
+
+/* ── Badge ──────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.badge-accent {
+  background: rgba(200,169,110,0.1);
+  color: var(--accent);
+  border: 0.5px solid var(--accent-border);
+}
+.badge-success {
+  background: rgba(76,175,125,0.1);
+  color: var(--color-success);
+}
+
+/* ── Divider ────────────────────────────────────────── */
+.divider {
+  height: 0.5px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* ── Empty state ────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.empty-state-icon { font-size: 32px; opacity: 0.3; }
+.empty-state-title { font-size: 13.5px; color: var(--text-secondary); font-weight: 500; }
+.empty-state-desc { font-size: 12px; color: var(--text-tertiary); max-width: 220px; line-height: 1.6; }
+
+/* ── Tiptap 编辑器 ──────────────────────────────────── */
+.ProseMirror {
+  flex: 1;
+  height: 100%;
+  padding: 52px 72px 200px;
+  max-width: 720px;
+  margin: 0 auto;
+  outline: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.85;
+  caret-color: var(--accent);
+}
+
+.ProseMirror .is-editor-empty:first-child::before,
+.ProseMirror p.is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
+  font-size: 14px;
+}
+
+.ProseMirror h1 {
+  font-size: 1.85em;
+  font-weight: 300;
+  font-family: var(--font-serif);
+  color: var(--text-primary);
+  letter-spacing: -0.4px;
+  margin: 1.6em 0 0.5em;
+  line-height: 1.3;
+  padding-bottom: 0.3em;
+  border-bottom: 0.5px solid var(--border);
+}
+.ProseMirror h2 {
+  font-size: 1.4em;
+  font-weight: 400;
+  font-family: var(--font-serif);
+  color: var(--text-primary);
+  margin: 1.4em 0 0.4em;
+  line-height: 1.4;
+}
+.ProseMirror h3 {
+  font-size: 1.12em;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 1.1em 0 0.3em;
+}
+.ProseMirror h1:first-child,
+.ProseMirror h2:first-child,
+.ProseMirror h3:first-child { margin-top: 0; }
+
+.ProseMirror p { margin: 0 0 0.7em; }
+.ProseMirror strong { color: var(--text-primary); font-weight: 600; }
+.ProseMirror em { color: var(--accent); font-style: italic; }
+.ProseMirror u { text-decoration-color: rgba(200,169,110,0.5); }
+.ProseMirror s { color: var(--text-tertiary); }
+
+.ProseMirror mark {
+  background: rgba(200,169,110,0.18);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+
+.ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  color: #9d7de0;
+  background: rgba(157,125,224,0.1);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 0.5px solid rgba(157,125,224,0.18);
+}
+
+.ProseMirror pre {
+  background: rgba(0,0,0,0.4);
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  color: #d4d0ca;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+  line-height: 1.7;
+}
+
+.ProseMirror blockquote {
+  border-left: 2.5px solid var(--accent);
+  padding: 4px 0 4px 18px;
+  margin: 1em 0;
+  color: var(--text-tertiary);
+  font-style: italic;
+  background: rgba(200,169,110,0.03);
+  border-radius: 0 6px 6px 0;
+}
+
+.ProseMirror a {
+  color: var(--color-info);
+  text-decoration: none;
+  border-bottom: 0.5px solid rgba(68,136,221,0.3);
+  transition: border-color 0.12s;
+}
+.ProseMirror a:hover { border-bottom-color: var(--color-info); }
+
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.4em; margin: 0.4em 0; }
+.ProseMirror li { margin: 0.15em 0; }
+.ProseMirror li p { margin: 0; }
+.ProseMirror ul > li::marker { color: var(--accent); }
+.ProseMirror ol > li::marker { color: var(--accent); font-weight: 500; }
+
+.ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
+.ProseMirror ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 4px; }
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer;
+}
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--text-tertiary); text-decoration: line-through;
+}
+
+.ProseMirror hr { border: none; border-top: 0.5px solid var(--border-md); margin: 1.6em 0; }
+.ProseMirror img { max-width: 100%; border-radius: var(--radius-md); border: 0.5px solid var(--border); margin: 0.5em 0; }
+
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.93em; }
+.ProseMirror th, .ProseMirror td {
+  border: 0.5px solid var(--border-md);
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  min-width: 72px;
+}
+.ProseMirror th { background: var(--bg-surface2); font-weight: 500; color: var(--text-primary); font-size: 0.87em; letter-spacing: 0.2px; }
+.ProseMirror td { background: var(--bg-surface); }
+.ProseMirror tr:hover td { background: var(--bg-hover); }
+.ProseMirror ::selection { background: rgba(200,169,110,0.22); }
+.ProseMirror .ProseMirror-selectednode { outline: 1.5px solid rgba(200,169,110,0.35); border-radius: 4px; }
+
+/* ── 预览模式 ───────────────────────────────────────── */
+.preview-content h1 { font-family: var(--font-serif); font-size: 1.9em; font-weight: 300; margin: 0 0 0.5em; color: var(--text-primary); }
+.preview-content h2 { font-family: var(--font-serif); font-size: 1.45em; font-weight: 400; margin: 1.3em 0 0.4em; color: var(--text-primary); }
+.preview-content h3 { font-size: 1.15em; font-weight: 500; margin: 1.1em 0 0.3em; color: var(--text-primary); }
+.preview-content p { margin: 0 0 0.9em; color: var(--text-secondary); }
+.preview-content strong { color: var(--text-primary); }
+.preview-content code { background: var(--bg-surface3); color: var(--accent); padding: 2px 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.9em; }
+.preview-content pre { background: var(--bg-surface2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 18px; overflow-x: auto; margin: 1em 0; }
+.preview-content pre code { background: none; padding: 0; color: var(--text-secondary); }
+.preview-content blockquote { border-left: 2.5px solid var(--accent); padding: 6px 14px; margin: 1em 0; background: rgba(200,169,110,0.04); border-radius: 0 6px 6px 0; color: var(--text-secondary); }
+.preview-content ul, .preview-content ol { padding-left: 1.4em; margin: 0.4em 0 0.9em; }
+.preview-content li { margin-bottom: 3px; color: var(--text-secondary); }
+.preview-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.preview-content th, .preview-content td { border: 0.5px solid var(--border); padding: 7px 12px; text-align: left; font-size: 13px; }
+.preview-content th { background: var(--bg-surface2); color: var(--text-primary); font-weight: 500; }
+.preview-content a { color: var(--accent); text-decoration: underline; }
+.preview-content img { max-width: 100%; border-radius: var(--radius-md); margin: 6px 0; }
+.preview-content hr { border: none; border-top: 0.5px solid var(--border); margin: 1.8em 0; }
+.preview-content mark { background: rgba(200,169,110,0.2); color: var(--text-primary); padding: 1px 3px; border-radius: 3px; }
+
+/* ── 代码块语法高亮（lowlight / highlight.js 主题，适配暗色编辑器）── */
+.code-block-lowlight {
+  position: relative;
+}
+.code-block-lowlight::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  opacity: 0.6;
+}
+/* token 颜色 */
+.hljs-comment, .hljs-quote            { color: #6a9955; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag,
+.hljs-built_in                        { color: #c586c0; }
+.hljs-string, .hljs-attr,
+.hljs-template-string                 { color: #ce9178; }
+.hljs-number, .hljs-literal           { color: #b5cea8; }
+.hljs-variable, .hljs-name            { color: #9cdcfe; }
+.hljs-function, .hljs-title           { color: #dcdcaa; }
+.hljs-type, .hljs-class               { color: #4ec9b0; }
+.hljs-symbol, .hljs-bullet            { color: #c8a96e; }
+.hljs-tag, .hljs-selector-class,
+.hljs-selector-id                     { color: #569cd6; }
+.hljs-operator, .hljs-punctuation     { color: #d4d0ca; }
+.hljs-meta                            { color: #9b9b9b; }
+.hljs-emphasis                        { font-style: italic; }
+.hljs-strong                          { font-weight: bold; }
+
+/* ── LaTeX 公式样式 ────────────────────────────────────────── */
+/* 行内公式 */
+.tiptap-mathematics-editor,
+.tiptap-mathematics-render {
+  display: inline;
+  cursor: pointer;
+}
+.tiptap-mathematics-editor {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(200,169,110,0.08);
+  border: 0.5px solid rgba(200,169,110,0.25);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--accent);
+}
+.tiptap-mathematics-render .katex {
+  font-size: 1em;
+  color: var(--text-primary);
+}
+.tiptap-mathematics-render .katex-error {
+  color: #e87a7a;
+  font-size: 0.85em;
+}
+/* 块级公式居中 */
+.tiptap-mathematics-render[data-display="true"] {
+  display: block;
+  text-align: center;
+  padding: 12px 0;
+  overflow-x: auto;
+}
+.tiptap-mathematics-render[data-display="true"] .katex-display {
+  margin: 0;
+}

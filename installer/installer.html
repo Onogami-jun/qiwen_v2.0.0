@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>启文 · 安装向导</title>
+<style>
+/* ══════════════════════════════════════════════
+   启文安装向导 — 完整样式
+   色彩系统: 深海蓝 #1B4F8C + 橙金 #E8A020 + 雾白
+   ══════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500&display=swap');
+
+:root {
+  --blue-deep:   #1B4F8C;
+  --blue-mid:    #2563A8;
+  --blue-light:  #EBF2FB;
+  --blue-pale:   #F4F8FD;
+  --orange:      #E8A020;
+  --orange-pale: #FEF3DC;
+  --white:       #FFFFFF;
+  --gray-1:      #F7F8FA;
+  --gray-2:      #EAECF0;
+  --gray-3:      #C8CDD8;
+  --gray-4:      #8B94A8;
+  --gray-5:      #4A5568;
+  --text-main:   #1A2340;
+  --text-sub:    #5A6478;
+  --text-hint:   #9AA3B2;
+  --success:     #1A9E5C;
+  --danger:      #D94040;
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --shadow-sm: 0 2px 8px rgba(27,79,140,.08);
+  --shadow-md: 0 8px 32px rgba(27,79,140,.12);
+  --shadow-lg: 0 20px 60px rgba(27,79,140,.18);
+  --ease: cubic-bezier(0.22,1,0.36,1);
+  --spring: cubic-bezier(0.34,1.56,0.64,1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--gray-1);
+  color: var(--text-main);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── 背景装饰 ──────────────────────────────── */
+.bg-decor {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  overflow: hidden;
+}
+.bg-decor::before {
+  content: '';
+  position: absolute;
+  width: 700px; height: 700px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(27,79,140,.06) 0%, transparent 70%);
+  top: -200px; left: -200px;
+  animation: bgFloat 12s ease-in-out infinite alternate;
+}
+.bg-decor::after {
+  content: '';
+  position: absolute;
+  width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232,160,32,.06) 0%, transparent 70%);
+  bottom: -150px; right: -100px;
+  animation: bgFloat 9s ease-in-out infinite alternate-reverse;
+}
+@keyframes bgFloat {
+  from { transform: translate(0,0) scale(1); }
+  to   { transform: translate(30px,20px) scale(1.05); }
+}
+
+/* ── 安装窗口 ──────────────────────────────── */
+.installer-window {
+  position: relative; z-index: 1;
+  width: 780px;
+  min-height: 540px;
+  background: var(--white);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(27,79,140,.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: windowIn .6s var(--ease) both;
+}
+@keyframes windowIn {
+  from { opacity:0; transform:translateY(24px) scale(.97); }
+  to   { opacity:1; transform:translateY(0) scale(1); }
+}
+
+/* ── 顶部标题栏 ────────────────────────────── */
+.title-bar {
+  height: 44px;
+  background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+}
+.title-bar-dots { display: flex; gap: 7px; }
+.dot {
+  width: 13px; height: 13px; border-radius: 50%;
+  cursor: pointer; transition: filter .15s;
+}
+.dot:hover { filter: brightness(1.2); }
+.dot-r { background: #FF5F57; }
+.dot-y { background: #FFBD2E; }
+.dot-g { background: #27C840; }
+.title-bar-title {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  font-size: 13px; color: rgba(255,255,255,.7);
+  letter-spacing: .5px; font-weight: 400;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+/* ── 主体布局 ──────────────────────────────── */
+.installer-body {
+  display: flex;
+  flex: 1;
+}
+
+/* ── 左侧品牌栏 ────────────────────────────── */
+.brand-panel {
+  width: 220px;
+  flex-shrink: 0;
+  background: linear-gradient(170deg, var(--blue-deep) 0%, #0F3569 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 20px 28px;
+  position: relative;
+  overflow: hidden;
+}
+/* 品牌栏装饰纹理 */
+.brand-panel::before {
+  content: '';
+  position: absolute;
+  width: 300px; height: 300px;
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 50%;
+  top: -120px; left: -80px;
+}
+.brand-panel::after {
+  content: '';
+  position: absolute;
+  width: 200px; height: 200px;
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 50%;
+  bottom: -60px; right: -60px;
+}
+
+/* ── Logo ──────────────────────────────────── */
+.logo-wrap {
+  position: relative; z-index: 1;
+  margin-bottom: 20px;
+}
+.logo-icon {
+  width: 80px; height: 80px;
+  animation: logoFloat 4s ease-in-out infinite;
+}
+@keyframes logoFloat {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* SVG Logo 内嵌：书本+毛笔 还原商标 */
+.logo-svg {
+  width: 80px; height: 80px;
+}
+
+.brand-name {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--white);
+  letter-spacing: 4px;
+  margin-bottom: 6px;
+  position: relative; z-index: 1;
+}
+.brand-slogan {
+  font-size: 11px;
+  color: rgba(255,255,255,.5);
+  letter-spacing: 1.5px;
+  margin-bottom: 36px;
+  position: relative; z-index: 1;
+  text-align: center;
+  line-height: 1.8;
+}
+
+/* ── 步骤指示器 ────────────────────────────── */
+.steps-nav {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative; z-index: 1;
+  flex: 1;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  cursor: default;
+  transition: background .2s;
+  position: relative;
+}
+.step-item.active { background: rgba(255,255,255,.1); }
+.step-item.done .step-num { background: var(--orange); color: #fff; border-color: var(--orange); }
+.step-item.done .step-label { color: rgba(255,255,255,.7); }
+.step-num {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600;
+  color: rgba(255,255,255,.4);
+  flex-shrink: 0;
+  transition: all .3s var(--spring);
+  background: transparent;
+}
+.step-item.active .step-num {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(232,160,32,.12);
+  animation: stepPulse 2s ease-in-out infinite;
+}
+@keyframes stepPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(232,160,32,.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(232,160,32,0); }
+}
+.step-label {
+  font-size: 12.5px;
+  color: rgba(255,255,255,.35);
+  font-weight: 400;
+  letter-spacing: .3px;
+  transition: color .2s;
+}
+.step-item.active .step-label { color: rgba(255,255,255,.92); font-weight: 500; }
+/* 步骤连接线 */
+.step-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 24px; top: 100%;
+  width: 1.5px; height: 4px;
+  background: rgba(255,255,255,.1);
+}
+
+.brand-version {
+  font-size: 11px;
+  color: rgba(255,255,255,.2);
+  letter-spacing: .5px;
+  position: relative; z-index: 1;
+  margin-top: auto;
+}
+
+/* ── 右侧内容区 ────────────────────────────── */
+.content-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── 步骤内容 ──────────────────────────────── */
+.step-page {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  animation: pageIn .4s var(--ease) both;
+}
+.step-page.active { display: flex; }
+@keyframes pageIn {
+  from { opacity:0; transform:translateX(20px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+
+.step-header {
+  padding: 32px 36px 24px;
+  border-bottom: 1px solid var(--gray-2);
+}
+.step-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--blue-light);
+  color: var(--blue-mid);
+  font-size: 11px; font-weight: 500;
+  padding: 3px 10px; border-radius: 20px;
+  margin-bottom: 12px; letter-spacing: .5px;
+}
+.step-tag-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--blue-mid);
+  animation: stepPulse2 2s infinite;
+}
+@keyframes stepPulse2 {
+  0%,100% { opacity:1; } 50% { opacity:.3; }
+}
+.step-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 22px; font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.step-desc {
+  font-size: 13.5px;
+  color: var(--text-sub);
+  line-height: 1.7;
+}
+
+.step-body {
+  padding: 24px 36px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ── 页脚按钮区 ────────────────────────────── */
+.step-footer {
+  padding: 16px 36px 20px;
+  border-top: 1px solid var(--gray-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--gray-1);
+}
+.footer-left { display: flex; gap: 8px; align-items: center; }
+.footer-right { display: flex; gap: 10px; align-items: center; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 22px;
+  border-radius: var(--r-md);
+  font-size: 13.5px; font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: 'Noto Sans SC', sans-serif;
+  letter-spacing: .3px;
+  transition: all .2s var(--ease);
+  white-space: nowrap;
+}
+.btn:active { transform: scale(.97); }
+.btn-primary {
+  background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid));
+  color: var(--white);
+  box-shadow: 0 4px 16px rgba(27,79,140,.3);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--blue-mid), #3073C4);
+  box-shadow: 0 6px 24px rgba(27,79,140,.4);
+  transform: translateY(-1px);
+}
+.btn-primary:disabled {
+  opacity: .5; cursor: not-allowed;
+  transform: none; box-shadow: none;
+}
+.btn-secondary {
+  background: var(--white);
+  color: var(--text-sub);
+  border: 1px solid var(--gray-2);
+  box-shadow: var(--shadow-sm);
+}
+.btn-secondary:hover {
+  background: var(--gray-1);
+  color: var(--text-main);
+  border-color: var(--gray-3);
+}
+.btn-orange {
+  background: linear-gradient(135deg, var(--orange), #D4881A);
+  color: var(--white);
+  box-shadow: 0 4px 16px rgba(232,160,32,.35);
+}
+.btn-orange:hover {
+  box-shadow: 0 6px 24px rgba(232,160,32,.5);
+  transform: translateY(-1px);
+}
+.btn-icon { font-size: 15px; }
+
+/* ══════════════════════════════════════════════
+   各步骤专属样式
+   ══════════════════════════════════════════════ */
+
+/* Step 1 — 欢迎 */
+.welcome-hero {
+  display: flex; align-items: center; gap: 28px;
+  padding: 20px 0 28px;
+}
+.welcome-logo-wrap {
+  position: relative; flex-shrink: 0;
+}
+.welcome-logo-bg {
+  width: 88px; height: 88px;
+  background: var(--blue-light);
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.welcome-logo-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  border: 2px solid rgba(27,79,140,.12);
+  border-radius: 22px;
+}
+.welcome-logo-bg svg { width: 60px; height: 60px; }
+.welcome-badge {
+  position: absolute; top: -4px; right: -4px;
+  background: var(--orange);
+  color: #fff; font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 20px;
+  letter-spacing: .3px;
+  box-shadow: 0 2px 8px rgba(232,160,32,.4);
+}
+.welcome-info h2 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 20px; font-weight: 500;
+  color: var(--text-main); margin-bottom: 6px;
+}
+.welcome-info p {
+  font-size: 13px; color: var(--text-sub); line-height: 1.7;
+}
+.welcome-features {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  margin-top: 4px;
+}
+.feature-card {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 16px;
+  background: var(--gray-1);
+  border-radius: var(--r-md);
+  border: 1px solid var(--gray-2);
+  transition: all .2s;
+}
+.feature-card:hover {
+  background: var(--blue-pale);
+  border-color: rgba(27,79,140,.15);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+.feature-icon {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; flex-shrink: 0;
+}
+.fi-blue  { background: var(--blue-light); }
+.fi-orange{ background: var(--orange-pale); }
+.fi-green { background: #EAF7F0; }
+.fi-purple{ background: #F0EAFB; }
+.feature-text h4 { font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 2px; }
+.feature-text p  { font-size: 11.5px; color: var(--text-hint); line-height: 1.5; }
+
+/* EULA */
+.license-box {
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
+  border-radius: var(--r-md);
+  padding: 16px 20px;
+  height: 200px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--text-sub);
+  margin-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-3) transparent;
+}
+.license-box::-webkit-scrollbar { width: 4px; }
+.license-box::-webkit-scrollbar-thumb { background: var(--gray-3); border-radius: 2px; }
+.license-box h3 { font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+.license-box p  { margin-bottom: 10px; }
+.agree-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  background: var(--blue-pale);
+  border-radius: var(--r-md);
+  border: 1px solid rgba(27,79,140,.1);
+  cursor: pointer;
+  transition: background .15s;
+}
+.agree-row:hover { background: var(--blue-light); }
+.agree-row input[type=checkbox] {
+  width: 17px; height: 17px;
+  accent-color: var(--blue-deep);
+  cursor: pointer;
+}
+.agree-row label { font-size: 13px; color: var(--text-main); cursor: pointer; }
+.agree-row label span { color: var(--blue-mid); font-weight: 500; }
+
+/* Step 3 — 安装路径 */
+.path-selector {
+  margin-bottom: 20px;
+}
+.path-label {
+  font-size: 12.5px; font-weight: 500; color: var(--text-sub);
+  margin-bottom: 8px; letter-spacing: .3px;
+}
+.path-input-row {
+  display: flex; gap: 8px;
+}
+.path-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--gray-2);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--text-main);
+  font-family: 'Noto Sans SC', monospace;
+  background: var(--white);
+  outline: none;
+  transition: border-color .2s;
+}
+.path-input:focus { border-color: var(--blue-mid); box-shadow: 0 0 0 3px rgba(27,79,140,.08); }
+.btn-browse {
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--gray-2);
+  background: var(--white);
+  font-size: 13px; color: var(--text-sub);
+  cursor: pointer; transition: all .15s;
+  font-family: 'Noto Sans SC', sans-serif;
+  white-space: nowrap;
+}
+.btn-browse:hover { border-color: var(--blue-mid); color: var(--blue-mid); }
+.disk-info {
+  margin-top: 10px;
+  display: flex; align-items: center; gap: 20px;
+}
+.disk-stat { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-hint); }
+.disk-dot  { width: 8px; height: 8px; border-radius: 50%; }
+.disk-dot.avail  { background: var(--success); }
+.disk-dot.needed { background: var(--orange); }
+.disk-bar-wrap {
+  margin-top: 12px;
+  background: var(--gray-2);
+  border-radius: 4px;
+  height: 6px; overflow: hidden;
+}
+.disk-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--blue-mid), var(--blue-deep));
+  width: 62%;
+  transition: width .6s var(--ease);
+}
+
+.options-list { display: flex; flex-direction: column; gap: 8px; }
+.option-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: var(--gray-1);
+  border-radius: var(--r-md);
+  border: 1px solid var(--gray-2);
+  cursor: pointer;
+  transition: all .15s;
+}
+.option-item:hover { background: var(--blue-pale); border-color: rgba(27,79,140,.15); }
+.option-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--blue-deep); }
+.option-item label { font-size: 13px; color: var(--text-main); cursor: pointer; flex: 1; }
+.option-item .opt-hint { font-size: 11.5px; color: var(--text-hint); }
+
+/* Step 4 — 安装进度 */
+.progress-area { padding: 8px 0; }
+.install-status {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 24px;
+}
+.status-icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--blue-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  animation: iconSpin 2s linear infinite;
+}
+.status-icon.done {
+  background: #EAF7F0;
+  animation: none;
+}
+@keyframes iconSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.status-texts h3 { font-size: 15px; font-weight: 500; color: var(--text-main); margin-bottom: 3px; }
+.status-texts p  { font-size: 12.5px; color: var(--text-sub); }
+
+.progress-track {
+  background: var(--gray-2);
+  border-radius: 8px; height: 10px; overflow: hidden;
+  margin-bottom: 10px; position: relative;
+}
+.progress-fill {
+  height: 100%; border-radius: 8px;
+  background: linear-gradient(90deg, var(--blue-deep) 0%, var(--blue-mid) 50%, #4A90D9 100%);
+  width: 0%;
+  transition: width .3s ease;
+  position: relative; overflow: hidden;
+}
+.progress-fill::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.35) 50%, transparent 100%);
+  animation: shimmer 1.4s linear infinite;
+  background-size: 200% 100%;
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+.progress-nums {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--text-hint); margin-bottom: 20px;
+}
+.install-log {
+  background: #F0F4FA;
+  border-radius: var(--r-md);
+  border: 1px solid var(--gray-2);
+  padding: 12px 14px;
+  height: 130px; overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 11.5px;
+  color: var(--text-sub);
+  scrollbar-width: thin;
+}
+.log-line {
+  padding: 2px 0;
+  animation: logIn .3s ease both;
+}
+@keyframes logIn { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:none; } }
+.log-line.ok   { color: var(--success); }
+.log-line.info { color: var(--blue-mid); }
+.log-line.warn { color: var(--orange); }
+
+/* Step 5 — 完成 */
+.finish-hero {
+  text-align: center;
+  padding: 16px 0 24px;
+}
+.finish-checkmark {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #1A9E5C, #22C97A);
+  margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; color: #fff;
+  box-shadow: 0 8px 32px rgba(26,158,92,.3);
+  animation: checkBounce .6s var(--spring) both;
+}
+@keyframes checkBounce {
+  from { transform: scale(0) rotate(-90deg); opacity:0; }
+  to   { transform: scale(1) rotate(0deg);   opacity:1; }
+}
+.finish-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 24px; font-weight: 500;
+  color: var(--text-main); margin-bottom: 8px;
+}
+.finish-sub {
+  font-size: 14px; color: var(--text-sub); line-height: 1.7; margin-bottom: 24px;
+}
+.finish-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.finish-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 16px 20px;
+  background: var(--gray-1); border-radius: var(--r-md);
+  border: 1px solid var(--gray-2);
+  cursor: pointer; min-width: 100px;
+  transition: all .2s;
+}
+.finish-card:hover { background: var(--blue-pale); border-color: rgba(27,79,140,.2); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.finish-card-icon { font-size: 22px; }
+.finish-card-label { font-size: 12px; color: var(--text-sub); font-weight: 500; }
+.launch-options { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.launch-row {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13px; color: var(--text-sub); cursor: pointer;
+}
+.launch-row input { accent-color: var(--blue-deep); cursor: pointer; }
+
+/* 水波纹 */
+.ripple-container { position: relative; overflow: hidden; }
+.ripple-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--rx,50%) var(--ry,50%), rgba(255,255,255,.3) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity .3s;
+}
+.ripple-container:active::after { opacity: 1; }
+
+/* ── 工具提示 ───────────────────────────────── */
+.tooltip-wrap { position: relative; display: inline-flex; }
+.tooltip-wrap:hover .tooltip-box { opacity:1; transform:translateY(0); pointer-events:auto; }
+.tooltip-box {
+  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%) translateY(6px);
+  background: rgba(26,35,64,.92);
+  color: #fff; font-size: 11.5px;
+  padding: 6px 10px; border-radius: 7px;
+  white-space: nowrap; opacity: 0;
+  pointer-events: none;
+  transition: all .2s; backdrop-filter: blur(4px);
+}
+
+/* ── 响应式 ────────────────────────────────── */
+@media (max-width: 800px) {
+  .brand-panel { width: 180px; }
+  .installer-window { width: 96vw; }
+  .welcome-features { grid-template-columns: 1fr; }
+}
+
+/* ── 打印/截图用途的进度阶段变量 ── */
+.progress-stage { display:none; }
+</style>
+</head>
+<body>
+
+<div class="bg-decor"></div>
+
+<div class="installer-window">
+
+  <!-- ── 顶部标题栏 ── -->
+  <div class="title-bar">
+    <div class="title-bar-dots">
+      <div class="dot dot-r" title="关闭" onclick="if(confirm('确定要退出安装吗？'))window.close()"></div>
+      <div class="dot dot-y" title="最小化"></div>
+      <div class="dot dot-g" title="最大化"></div>
+    </div>
+    <div class="title-bar-title" id="winTitle">启文 · 安装向导</div>
+  </div>
+
+  <!-- ── 主体 ── -->
+  <div class="installer-body">
+
+    <!-- ── 左侧品牌栏 ── -->
+    <div class="brand-panel">
+      <div class="logo-wrap">
+        <div class="logo-icon">
+          <!-- 还原商标：书本+毛笔+火花 -->
+          <svg class="logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- 书本背景 -->
+            <rect x="20" y="18" width="48" height="62" rx="5" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.55)" stroke-width="2.5"/>
+            <!-- 书页折叠 -->
+            <rect x="27" y="18" width="21" height="62" rx="0" fill="rgba(255,255,255,0.07)"/>
+            <!-- 书脊线 -->
+            <line x1="27" y1="20" x2="27" y2="78" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+            <!-- 书本高光 -->
+            <rect x="32" y="26" width="12" height="1.5" rx="1" fill="rgba(255,255,255,0.25)"/>
+            <rect x="32" y="31" width="18" height="1.5" rx="1" fill="rgba(255,255,255,0.15)"/>
+            <rect x="32" y="36" width="14" height="1.5" rx="1" fill="rgba(255,255,255,0.15)"/>
+            <!-- 毛笔杆 -->
+            <line x1="54" y1="72" x2="80" y2="20" stroke="rgba(255,255,255,0.85)" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- 毛笔头 橙色 -->
+            <path d="M49 80 Q54 72 60 68 L57 65 Q52 68 47 77 Z" fill="#E8A020"/>
+            <path d="M49 80 Q51 76 54 73 L52 71 Q49 74 48 79 Z" fill="#F4B830"/>
+            <!-- 墨点 -->
+            <circle cx="46" cy="82" r="3" fill="rgba(232,160,32,0.6)"/>
+            <!-- 火花 装饰点 -->
+            <circle cx="75" cy="16" r="3" fill="#FFCE55"/>
+            <circle cx="82" cy="22" r="2" fill="#FFCE55" opacity=".7"/>
+            <circle cx="70" cy="12" r="1.5" fill="#FFCE55" opacity=".5"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="brand-name">启  文</div>
+      <div class="brand-slogan">启于思，行于文</div>
+
+      <!-- 步骤导航 -->
+      <div class="steps-nav" id="stepsNav">
+        <div class="step-item active" data-step="1">
+          <div class="step-num">1</div>
+          <div class="step-label">欢迎与介绍</div>
+        </div>
+        <div class="step-item" data-step="2">
+          <div class="step-num">2</div>
+          <div class="step-label">许可协议</div>
+        </div>
+        <div class="step-item" data-step="3">
+          <div class="step-num">3</div>
+          <div class="step-label">安装选项</div>
+        </div>
+        <div class="step-item" data-step="4">
+          <div class="step-num">4</div>
+          <div class="step-label">正在安装</div>
+        </div>
+        <div class="step-item" data-step="5">
+          <div class="step-num">5</div>
+          <div class="step-label">安装完成</div>
+        </div>
+      </div>
+
+      <div class="brand-version">v 1.0.0  ©  2024 启文</div>
+    </div>
+
+    <!-- ── 右侧内容区 ── -->
+    <div class="content-panel">
+
+      <!-- ═══ STEP 1: 欢迎 ═══ -->
+      <div class="step-page active" id="page1">
+        <div class="step-header">
+          <div class="step-tag"><div class="step-tag-dot"></div>STEP  1  OF  5</div>
+          <div class="step-title">欢迎使用启文</div>
+          <div class="step-desc">这是一款为深度创作者设计的本地优先知识管理与写作平台，安装向导将引导您完成安装。</div>
+        </div>
+        <div class="step-body">
+          <div class="welcome-hero">
+            <div class="welcome-logo-wrap">
+              <div class="welcome-logo-bg">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="18" y="15" width="50" height="65" rx="6" fill="#EBF2FB" stroke="#1B4F8C" stroke-width="2.5"/>
+                  <rect x="25" y="15" width="22" height="65" rx="0" fill="rgba(27,79,140,0.06)"/>
+                  <line x1="25" y1="17" x2="25" y2="78" stroke="#1B4F8C" stroke-width="1.5" stroke-dasharray="2 2"/>
+                  <rect x="30" y="26" width="14" height="2" rx="1" fill="#1B4F8C" opacity=".3"/>
+                  <rect x="30" y="32" width="22" height="2" rx="1" fill="#1B4F8C" opacity=".2"/>
+                  <rect x="30" y="38" width="18" height="2" rx="1" fill="#1B4F8C" opacity=".2"/>
+                  <rect x="30" y="44" width="20" height="2" rx="1" fill="#1B4F8C" opacity=".15"/>
+                  <line x1="52" y1="76" x2="80" y2="22" stroke="#1B4F8C" stroke-width="2.8" stroke-linecap="round"/>
+                  <path d="M46 84 Q52 76 58 72 L55 69 Q50 72 44 82 Z" fill="#E8A020"/>
+                  <path d="M46 84 Q49 79 52 76 L50 74 Q47 77 45 83 Z" fill="#F4B830"/>
+                  <circle cx="43" cy="86" r="3.5" fill="rgba(232,160,32,0.5)"/>
+                  <circle cx="77" cy="16" r="3.5" fill="#FFCE55"/>
+                  <circle cx="84" cy="24" r="2.2" fill="#FFCE55" opacity=".6"/>
+                  <circle cx="72" cy="10" r="1.8" fill="#FFCE55" opacity=".4"/>
+                </svg>
+              </div>
+              <div class="welcome-badge">v1.0</div>
+            </div>
+            <div class="welcome-info">
+              <h2>启文软件 正式版</h2>
+              <p>本地优先、AI 赋能的一体化知识管理与写作平台。支持 Markdown、文献管理、多设备同步，专为学者、作家与深度思考者打造。</p>
+            </div>
+          </div>
+
+          <div class="welcome-features">
+            <div class="feature-card">
+              <div class="feature-icon fi-blue">📝</div>
+              <div class="feature-text">
+                <h4>沉浸式写作</h4>
+                <p>Markdown 编辑器，专注模式，实时字数统计</p>
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon fi-orange">🔬</div>
+              <div class="feature-text">
+                <h4>文献管理</h4>
+                <p>一键导入文献，自动生成 BibTeX 引用</p>
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon fi-green">⚡</div>
+              <div class="feature-text">
+                <h4>AI 写作助手</h4>
+                <p>智能续写、润色、摘要，一键提升文章质量</p>
+              </div>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon fi-purple">☁️</div>
+              <div class="feature-text">
+                <h4>多设备同步</h4>
+                <p>本地优先存储，可选云端同步，数据自主掌控</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;padding:12px 16px;background:var(--orange-pale);border-radius:var(--r-md);border:1px solid rgba(232,160,32,.25);display:flex;align-items:center;gap:10px;">
+            <span style="font-size:16px">💡</span>
+            <p style="font-size:12.5px;color:var(--text-sub);line-height:1.6">
+              <strong style="color:var(--text-main)">系统要求：</strong>
+              Windows 10+（64位）/ macOS 11+（Apple Silicon & Intel）/ Ubuntu 20.04+
+            </p>
+          </div>
+        </div>
+        <div class="step-footer">
+          <div class="footer-left">
+            <span style="font-size:12px;color:var(--text-hint)">点击「下一步」继续安装</span>
+          </div>
+          <div class="footer-right">
+            <button class="btn btn-secondary" onclick="if(confirm('确定取消安装吗？'))alert('安装已取消')">取消</button>
+            <button class="btn btn-primary ripple-container" onclick="goStep(2)">
+              下一步 <span class="btn-icon">→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ STEP 2: 许可协议 ═══ -->
+      <div class="step-page" id="page2">
+        <div class="step-header">
+          <div class="step-tag"><div class="step-tag-dot"></div>STEP  2  OF  5</div>
+          <div class="step-title">最终用户许可协议</div>
+          <div class="step-desc">请仔细阅读以下许可协议内容，继续安装即表示您同意协议中的所有条款。</div>
+        </div>
+        <div class="step-body">
+          <div class="license-box" id="licenseBox" onscroll="checkScroll()">
+            <h3>《启文软件最终用户许可协议》</h3>
+            <p>最后更新日期：2024年1月1日</p>
+            <p>重要提示：在安装、复制或使用本软件前，请仔细阅读本协议的所有条款。安装或使用本软件即表示您同意受本协议条款的约束。</p>
+            <p><strong>第一条 授权范围</strong><br>
+            启文软件（以下简称"本软件"）的著作权归启文团队所有。本协议授予您在以下条件下使用本软件的有限的、非排他性的、不可转让的许可：（1）您可以在您拥有或控制的设备上安装和使用本软件；（2）您可以为备份或存档目的制作本软件的一份副本。</p>
+            <p><strong>第二条 限制条款</strong><br>
+            您不得：（1）对本软件进行反向工程、反编译或反汇编；（2）修改、改编、翻译或基于本软件创建衍生作品；（3）出租、出借、销售、再授权或以其他方式转让本软件；（4）删除本软件中的任何所有权声明或标签；（5）将本软件用于任何非法或未经授权的目的。</p>
+            <p><strong>第三条 数据与隐私</strong><br>
+            本软件采用本地优先架构，您的文档默认存储在您的本地设备上。选择云同步功能时，您的数据将经过端对端加密传输。我们承诺不会出售或滥用您的个人数据。详情请参阅《隐私政策》。</p>
+            <p><strong>第四条 免责声明</strong><br>
+            本软件按"现状"提供，不提供任何明示或暗示的保证，包括但不限于适销性、特定用途适用性和不侵权的保证。启文团队不对因使用本软件导致的任何直接、间接、偶然、特殊或后果性损害承担责任。</p>
+            <p><strong>第五条 更新与维护</strong><br>
+            启文团队可能不定期发布本软件的更新版本。更新可能是自动进行的，也可能需要您手动触发。更新可能会修改或删除某些功能。</p>
+            <p><strong>第六条 协议终止</strong><br>
+            如果您违反本协议的任何条款，本授权将自动终止。授权终止后，您必须立即停止使用并卸载本软件。</p>
+            <p><strong>第七条 适用法律</strong><br>
+            本协议受中华人民共和国法律管辖并依其解释。因本协议引起的任何争议，双方应首先协商解决，协商不成的，提交有管辖权的人民法院诉讼解决。</p>
+            <p>感谢您选择启文，我们期待我们的软件能为您的创作带来愉悦与高效。</p>
+            <p style="text-align:center;margin-top:16px;color:var(--text-hint)">— 启文团队</p>
+          </div>
+
+          <div class="agree-row" onclick="toggleAgree()">
+            <input type="checkbox" id="agreeCheck">
+            <label for="agreeCheck">我已阅读并同意<span>《启文最终用户许可协议》</span>及<span>《隐私政策》</span></label>
+          </div>
+
+          <div style="margin-top:12px;display:flex;gap:12px;">
+            <a href="#" style="font-size:12px;color:var(--blue-mid);text-decoration:none;" onclick="alert('正在打开完整协议...')">查看完整协议 →</a>
+            <a href="#" style="font-size:12px;color:var(--blue-mid);text-decoration:none;" onclick="alert('正在打开隐私政策...')">查看隐私政策 →</a>
+          </div>
+        </div>
+        <div class="step-footer">
+          <div class="footer-left">
+            <button class="btn btn-secondary" onclick="goStep(1)">← 上一步</button>
+          </div>
+          <div class="footer-right">
+            <button class="btn btn-secondary" onclick="if(confirm('确定取消安装吗？'))alert('安装已取消')">取消</button>
+            <button class="btn btn-primary" id="btnNext2" onclick="goStep(3)" disabled>
+              下一步 <span class="btn-icon">→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ STEP 3: 安装选项 ═══ -->
+      <div class="step-page" id="page3">
+        <div class="step-header">
+          <div class="step-tag"><div class="step-tag-dot"></div>STEP  3  OF  5</div>
+          <div class="step-title">安装位置与选项</div>
+          <div class="step-desc">选择安装目录，并根据您的偏好配置快捷方式与启动选项。</div>
+        </div>
+        <div class="step-body">
+          <div class="path-selector">
+            <div class="path-label">安装目录</div>
+            <div class="path-input-row">
+              <input class="path-input" id="installPath" type="text" value="C:\Program Files\QiWen" readonly>
+              <button class="btn-browse" onclick="pickPath()">浏览…</button>
+            </div>
+            <div class="disk-info">
+              <div class="disk-stat"><div class="disk-dot needed"></div>所需空间：245 MB</div>
+              <div class="disk-stat"><div class="disk-dot avail"></div>可用空间：128.4 GB</div>
+            </div>
+            <div class="disk-bar-wrap"><div class="disk-bar"></div></div>
+          </div>
+
+          <div style="margin-bottom:12px;font-size:12.5px;font-weight:500;color:var(--text-sub);letter-spacing:.3px;">附加选项</div>
+          <div class="options-list">
+            <div class="option-item">
+              <input type="checkbox" id="opt1" checked>
+              <label for="opt1">在桌面创建快捷方式</label>
+              <span class="opt-hint">推荐</span>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="opt2" checked>
+              <label for="opt2">在开始菜单创建启动项</label>
+              <span class="opt-hint">推荐</span>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="opt3">
+              <label for="opt3">开机时自动启动启文</label>
+              <span class="opt-hint">可选</span>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="opt4" checked>
+              <label for="opt4">关联 .md / .qiwen 文件类型</label>
+              <span class="opt-hint">推荐</span>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="opt5">
+              <label for="opt5">向启文团队发送匿名使用统计（帮助改进产品）</label>
+              <span class="opt-hint">可选</span>
+            </div>
+          </div>
+        </div>
+        <div class="step-footer">
+          <div class="footer-left">
+            <button class="btn btn-secondary" onclick="goStep(2)">← 上一步</button>
+          </div>
+          <div class="footer-right">
+            <button class="btn btn-secondary" onclick="if(confirm('确定取消安装吗？'))alert('安装已取消')">取消</button>
+            <button class="btn btn-primary" onclick="goStep(4)">
+              开始安装 <span class="btn-icon">⚡</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ STEP 4: 安装进度 ═══ -->
+      <div class="step-page" id="page4">
+        <div class="step-header">
+          <div class="step-tag"><div class="step-tag-dot"></div>STEP  4  OF  5</div>
+          <div class="step-title">正在安装启文…</div>
+          <div class="step-desc">请耐心等待，安装过程通常在 1-2 分钟内完成，请勿关闭此窗口。</div>
+        </div>
+        <div class="step-body">
+          <div class="progress-area">
+            <div class="install-status">
+              <div class="status-icon" id="statusIcon">⚙️</div>
+              <div class="status-texts">
+                <h3 id="statusTitle">准备安装文件…</h3>
+                <p  id="statusDesc">正在验证安装包完整性</p>
+              </div>
+            </div>
+
+            <div class="progress-track">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-nums">
+              <span id="progressPct">0%</span>
+              <span id="progressFile">初始化…</span>
+            </div>
+
+            <div class="install-log" id="installLog">
+              <div class="log-line info">[启文安装程序] 启动安装引擎 v1.0…</div>
+            </div>
+          </div>
+        </div>
+        <div class="step-footer">
+          <div class="footer-left">
+            <span style="font-size:12px;color:var(--text-hint)" id="installEta">预计剩余时间…</span>
+          </div>
+          <div class="footer-right">
+            <button class="btn btn-secondary" id="btnCancel4" onclick="cancelInstall()">取消安装</button>
+            <button class="btn btn-primary" id="btnNext4" onclick="goStep(5)" disabled>
+              下一步 →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ STEP 5: 完成 ═══ -->
+      <div class="step-page" id="page5">
+        <div class="step-header">
+          <div class="step-tag" style="background:#EAF7F0;color:var(--success)"><div class="step-tag-dot" style="background:var(--success)"></div>安装成功</div>
+          <div class="step-title">🎉 启文已成功安装！</div>
+          <div class="step-desc">启于思，行于文。感谢您选择启文，开始您的创作之旅吧。</div>
+        </div>
+        <div class="step-body">
+          <div class="finish-hero">
+            <div class="finish-checkmark">✓</div>
+            <div class="finish-title">安装完成</div>
+            <div class="finish-sub">
+              启文 v1.0.0 已成功安装到您的计算机。<br>
+              您可以通过桌面图标或开始菜单启动软件。
+            </div>
+
+            <div class="finish-actions">
+              <div class="finish-card" onclick="alert('正在打开使用指南…')">
+                <span class="finish-card-icon">📖</span>
+                <span class="finish-card-label">使用指南</span>
+              </div>
+              <div class="finish-card" onclick="alert('正在打开更新日志…')">
+                <span class="finish-card-icon">📋</span>
+                <span class="finish-card-label">更新日志</span>
+              </div>
+              <div class="finish-card" onclick="alert('正在打开官方社群…')">
+                <span class="finish-card-icon">💬</span>
+                <span class="finish-card-label">加入社群</span>
+              </div>
+              <div class="finish-card" onclick="alert('正在打开官网…')">
+                <span class="finish-card-icon">🌐</span>
+                <span class="finish-card-label">官方网站</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:14px 20px;background:var(--gray-1);border-radius:var(--r-md);border:1px solid var(--gray-2);">
+            <div class="launch-options">
+              <label class="launch-row">
+                <input type="checkbox" checked> 立即启动启文
+              </label>
+              <label class="launch-row">
+                <input type="checkbox"> 查看版本发行说明
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="step-footer">
+          <div class="footer-left">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg width="28" height="28" viewBox="0 0 100 100" fill="none">
+                <rect x="20" y="18" width="48" height="62" rx="5" fill="#EBF2FB" stroke="#1B4F8C" stroke-width="2.5"/>
+                <rect x="27" y="18" width="21" height="62" fill="rgba(27,79,140,0.06)"/>
+                <line x1="27" y1="20" x2="27" y2="78" stroke="#1B4F8C" stroke-width="1.5"/>
+                <line x1="60" y1="76" x2="82" y2="24" stroke="#1B4F8C" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M52 84 Q58 76 64 72 L61 69 Q56 72 50 82 Z" fill="#E8A020"/>
+                <circle cx="80" cy="18" r="3" fill="#FFCE55"/>
+              </svg>
+              <span style="font-size:11.5px;color:var(--text-hint)">启文  v1.0.0  ·  © 2024 启文团队</span>
+            </div>
+          </div>
+          <div class="footer-right">
+            <button class="btn btn-orange" onclick="finishInstall()">
+              🚀 立即启动启文
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content-panel -->
+  </div><!-- /installer-body -->
+</div><!-- /installer-window -->
+
+<script>
+/* ══ 状态 ══ */
+let currentStep = 1;
+let agreed = false;
+let installTimer = null;
+let installDone = false;
+
+/* ══ 步骤切换 ══ */
+function goStep(n) {
+  if (n === 2 && currentStep < 2) { /* ok */ }
+  if (n === 3 && !agreed) { shakeAgree(); return; }
+  if (n === 4 && currentStep === 3) { startInstall(); }
+
+  document.querySelectorAll('.step-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page' + n).classList.add('active');
+
+  document.querySelectorAll('.step-item').forEach(item => {
+    const s = parseInt(item.dataset.step);
+    item.classList.remove('active', 'done');
+    if (s === n)      item.classList.add('active');
+    else if (s < n)   item.classList.add('done');
+    // done → checkmark
+    const num = item.querySelector('.step-num');
+    if (s < n) num.textContent = '✓';
+    else        num.textContent = s;
+  });
+
+  document.getElementById('winTitle').textContent =
+    ['', '欢迎与介绍', '许可协议', '安装选项', '正在安装', '安装完成'][n] + ' · 启文安装向导';
+
+  currentStep = n;
+  window.scrollTo(0,0);
+}
+
+/* ══ 同意协议 ══ */
+function toggleAgree() {
+  const cb = document.getElementById('agreeCheck');
+  cb.checked = !cb.checked;
+  agreed = cb.checked;
+  document.getElementById('btnNext2').disabled = !agreed;
+}
+
+function shakeAgree() {
+  const row = document.querySelector('.agree-row');
+  row.style.animation = 'none';
+  row.offsetHeight;
+  row.style.animation = 'shake .4s ease';
+  row.style.borderColor = 'var(--danger)';
+  setTimeout(() => { row.style.borderColor = ''; }, 1200);
+}
+
+/* ══ 滚动检测：鼓励阅读 ══ */
+function checkScroll() {
+  const box = document.getElementById('licenseBox');
+  const pct = box.scrollTop / (box.scrollHeight - box.clientHeight);
+  if (pct > 0.9) {
+    document.querySelector('.agree-row').style.background = 'rgba(27,79,140,.06)';
+  }
+}
+
+/* ══ 路径选择（模拟） ══ */
+const PATHS = [
+  'C:\\Program Files\\QiWen',
+  'D:\\Apps\\QiWen',
+  'C:\\Users\\User\\AppData\\Local\\QiWen',
+];
+let pathIdx = 0;
+function pickPath() {
+  pathIdx = (pathIdx + 1) % PATHS.length;
+  document.getElementById('installPath').value = PATHS[pathIdx];
+}
+
+/* ══ 安装模拟 ══ */
+const INSTALL_STEPS = [
+  { pct: 5,  title: '解压安装包…',      desc: '正在验证文件完整性',         file: 'qiwen-core.pak',          cls: 'info' },
+  { pct: 12, title: '安装运行时环境…',   desc: '安装 Electron 运行时',       file: 'electron-runtime.dll',    cls: 'info' },
+  { pct: 22, title: '写入核心文件…',     desc: '复制应用程序文件',           file: 'qiwen-main.js',           cls: 'info' },
+  { pct: 34, title: '安装数据库引擎…',   desc: '配置 SQLite 本地数据库',      file: 'better-sqlite3.node',     cls: 'info' },
+  { pct: 45, title: '安装编辑器组件…',   desc: '配置 CodeMirror 编辑引擎',   file: 'codemirror-bundle.js',    cls: 'info' },
+  { pct: 57, title: '配置 AI 模块…',     desc: '初始化智能写作助手',         file: 'ai-service-worker.js',    cls: 'info' },
+  { pct: 67, title: '安装字体资源…',     desc: '复制中文字体文件',           file: 'NotoSerifSC.woff2',       cls: 'info' },
+  { pct: 76, title: '创建快捷方式…',     desc: '在桌面和开始菜单创建图标',   file: 'shortcuts',               cls: 'ok'   },
+  { pct: 84, title: '注册文件关联…',     desc: '关联 .md 和 .qiwen 文件类型', file: 'file-associations',      cls: 'ok'   },
+  { pct: 91, title: '初始化应用数据…',   desc: '创建默认工作区和配置文件',   file: 'init-userdata',           cls: 'ok'   },
+  { pct: 96, title: '写入注册表…',       desc: '完成系统注册',               file: 'registry',                cls: 'ok'   },
+  { pct: 100, title: '安装完成！',       desc: '启文已成功安装到您的计算机', file: '✅ 完成',                  cls: 'ok'   },
+];
+
+function startInstall() {
+  const fill = document.getElementById('progressFill');
+  const pctEl = document.getElementById('progressPct');
+  const fileEl = document.getElementById('progressFile');
+  const titleEl = document.getElementById('statusTitle');
+  const descEl  = document.getElementById('statusDesc');
+  const log  = document.getElementById('installLog');
+  const eta  = document.getElementById('installEta');
+  const iconEl = document.getElementById('statusIcon');
+  let idx = 0;
+
+  function runStep() {
+    if (idx >= INSTALL_STEPS.length) {
+      // Done
+      fill.style.width = '100%';
+      pctEl.textContent = '100%';
+      titleEl.textContent = '安装完成！';
+      descEl.textContent  = '所有文件已成功写入';
+      iconEl.textContent  = '✅';
+      iconEl.classList.add('done');
+      eta.textContent = '安装用时约 0:12';
+      document.getElementById('btnNext4').disabled = false;
+      document.getElementById('btnCancel4').disabled = true;
+      installDone = true;
+      addLog('ok', '[完成] 启文 v1.0.0 安装成功！');
+      return;
+    }
+
+    const s = INSTALL_STEPS[idx];
+    fill.style.width = s.pct + '%';
+    pctEl.textContent = s.pct + '%';
+    fileEl.textContent = s.file;
+    titleEl.textContent = s.title;
+    descEl.textContent  = s.desc;
+    iconEl.textContent  = idx < INSTALL_STEPS.length - 1 ? '⚙️' : '✅';
+    addLog(s.cls, `[${String(s.pct).padStart(3,' ')}%] ${s.desc} (${s.file})`);
+
+    const remaining = INSTALL_STEPS.length - idx;
+    eta.textContent = `预计剩余时间：约 ${Math.ceil(remaining * 0.12)} 秒`;
+
+    idx++;
+    const delay = 200 + Math.random() * 400;
+    installTimer = setTimeout(runStep, delay);
+  }
+
+  addLog('info', '[启动] 开始安装启文 v1.0.0…');
+  addLog('info', `[路径] ${document.getElementById('installPath').value}`);
+  setTimeout(runStep, 400);
+}
+
+function addLog(cls, text) {
+  const log = document.getElementById('installLog');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + cls;
+  line.textContent = text;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function cancelInstall() {
+  if (installDone) return;
+  if (!confirm('确定要取消安装吗？已安装的文件将被清理。')) return;
+  clearTimeout(installTimer);
+  addLog('warn', '[取消] 用户取消安装，正在回滚…');
+  document.getElementById('statusTitle').textContent = '正在回滚…';
+  setTimeout(() => { alert('安装已取消，已清理所有临时文件。'); }, 800);
+}
+
+function finishInstall() {
+  alert('🎉 启文正在启动，请稍候…\n\n（实际部署后此处将直接启动应用）');
+}
+
+/* ══ 抖动动画 ══ */
+const shakeKF = `@keyframes shake {
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-6px)}
+  40%{transform:translateX(6px)}
+  60%{transform:translateX(-4px)}
+  80%{transform:translateX(4px)}
+}`;
+document.head.appendChild(Object.assign(document.createElement('style'), {textContent: shakeKF}));
+</script>
+</body>
+</html>

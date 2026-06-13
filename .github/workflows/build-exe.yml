@@ -1,0 +1,133 @@
+name: 编译启文安装包
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    name: 编译 Windows EXE
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖（告知 better-sqlite3 使用 Electron runtime）
+        run: npm install --legacy-peer-deps
+        env:
+          CI: 'true'
+          npm_config_runtime: electron
+          npm_config_target: 31.7.7
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_build_from_source: false
+
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+
+      - name: 打包 Windows 安装包
+        run: npm run build:win -- --publish never
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-Windows
+          path: dist/*.exe
+          retention-days: 30
+          if-no-files-found: error
+
+  build-mac:
+    runs-on: macos-13
+    name: 编译 macOS DMG
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖（告知 better-sqlite3 使用 Electron runtime）
+        run: npm install --legacy-peer-deps
+        env:
+          CI: 'true'
+          npm_config_runtime: electron
+          npm_config_target: 31.7.7
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_build_from_source: false
+
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+
+      - name: 打包 macOS DMG（跳过签名）
+        run: npm run build:mac -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: 上传 DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-macOS
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    name: 编译 Linux 安装包
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libdrm-dev libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev libxkbcommon-dev libpango1.0-dev libasound2-dev
+
+      - name: 安装依赖（告知 better-sqlite3 使用 Electron runtime）
+        run: npm install --legacy-peer-deps
+        env:
+          CI: 'true'
+          npm_config_runtime: electron
+          npm_config_target: 31.7.7
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_build_from_source: false
+
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+
+      - name: 打包 Linux 安装包
+        run: npm run build:linux -- --publish never
+
+      - name: 查看打包产物
+        run: ls -lh dist/
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-Linux
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

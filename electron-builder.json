@@ -1,0 +1,149 @@
+{
+  "appId": "studio.qiwen.app",
+  "productName": "启文",
+  "copyright": "© 2024 启文团队。保留所有权利。",
+  "directories": {
+    "output": "dist",
+    "buildResources": "assets"
+  },
+  "files": [
+    "build/**/*",
+    "electron/**/*",
+    "src/main/**/*",
+    "src/shared/**/*",
+    "node_modules/**/*",
+    "!node_modules/.cache"
+  ],
+  "asar": true,
+  "extraResources": [
+    {
+      "from": "node_modules/sql.js/dist",
+      "to": "sql.js/dist"
+    },
+    {
+      "from": "resources/app-update.yml",
+      "to": "app-update.yml"
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "icon": "assets/icon.icns",
+    "hardenedRuntime": true,
+    "minimumSystemVersion": "11.0",
+    "darkModeSupport": true,
+    "target": [
+      {
+        "target": "dmg"
+      },
+      {
+        "target": "zip"
+      }
+    ],
+    "extendInfo": {
+      "CFBundleDocumentTypes": [
+        {
+          "CFBundleTypeName": "启文文档",
+          "CFBundleTypeExtensions": [
+            "qiwen",
+            "md"
+          ],
+          "CFBundleTypeRole": "Editor"
+        }
+      ]
+    },
+    "artifactName": "QiWen-${version}-mac-${arch}.${ext}"
+  },
+  "dmg": {
+    "title": "QiWen ${version}",
+    "icon": "assets/icon.icns",
+    "iconSize": 128,
+    "window": {
+      "width": 660,
+      "height": 440
+    },
+    "contents": [
+      {
+        "x": 160,
+        "y": 200,
+        "type": "file"
+      },
+      {
+        "x": 500,
+        "y": 200,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  },
+  "win": {
+    "icon": "assets/icon.ico",
+    "publisherName": "启文团队",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "启文",
+    "menuCategory": "启文",
+    "runAfterFinish": true,
+    "installerIcon": "assets/icon.ico",
+    "uninstallerIcon": "assets/icon.ico",
+    "unicode": true,
+    "language": "2052",
+    "deleteAppDataOnUninstall": false,
+    "uninstallDisplayName": "启文"
+  },
+  "portable": {
+    "artifactName": "QiWen-${version}-Portable-x64.exe"
+  },
+  "linux": {
+    "icon": "assets/icon.png",
+    "category": "Office",
+    "desktop": {
+      "StartupWMClass": "QiWen",
+      "Comment": "启于思，行于文"
+    },
+    "mimeTypes": [
+      "text/markdown",
+      "application/x-qiwen"
+    ],
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "deb",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "QiWen-${version}-linux-${arch}.${ext}"
+  },
+  "publish": null,
+  "artifactName": "QiWen-${version}-Setup-x64.exe",
+  "extends": null,
+  "extraMetadata": {
+    "main": "electron/main.js"
+  },
+  "executableName": "QiWen"
+}

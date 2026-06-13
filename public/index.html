@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https:;">
+  <title>启文</title>
+  <!-- 在 React 挂载前立即应用主题，消除白屏闪烁 -->
+  <script>
+    (function() {
+      // 读取本地存储的主题设置
+      var theme = 'dark';
+      try {
+        var raw = localStorage.getItem('persist:qiwen-settings');
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          var settings = parsed.theme ? JSON.parse(parsed.theme) : null;
+          if (settings && (settings === 'light' || settings === 'dark' || settings === 'system')) {
+            theme = settings;
+          }
+        }
+      } catch(e) {}
+
+      var dark = {
+        '--bg-base': '#0a0a0f',
+        '--bg-surface': '#111118',
+        '--bg-surface2': '#16161f',
+        '--bg-surface3': '#1c1c28',
+        '--bg-hover': 'rgba(255,255,255,0.04)',
+        '--text-primary': '#e8e6e0',
+        '--text-secondary': '#9b9890',
+        '--text-tertiary': '#5a5855',
+        '--border': 'rgba(255,255,255,0.07)',
+        '--border-md': 'rgba(255,255,255,0.12)',
+        '--accent': '#c8a96e',
+      };
+      var light = {
+        '--bg-base': '#f5f5f0',
+        '--bg-surface': '#ffffff',
+        '--bg-surface2': '#f0ede8',
+        '--bg-surface3': '#e8e4de',
+        '--bg-hover': 'rgba(0,0,0,0.04)',
+        '--text-primary': '#1a1a1a',
+        '--text-secondary': '#4a4a4a',
+        '--text-tertiary': '#888888',
+        '--border': 'rgba(0,0,0,0.08)',
+        '--border-md': 'rgba(0,0,0,0.15)',
+        '--accent': '#c8a96e',
+      };
+
+      var vars = theme === 'light' ? light : dark;
+      var root = document.documentElement;
+      for (var k in vars) root.style.setProperty(k, vars[k]);
+      // 同步设置 body 背景，防止空白时间窗口
+      document.documentElement.style.background = vars['--bg-base'];
+    })();
+  </script>
+</head>
+<body>
+  <noscript>启文需要启用 JavaScript 才能运行。</noscript>
+  <div id="root"></div>
+</body>
+</html>

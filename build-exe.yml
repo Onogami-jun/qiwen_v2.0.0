@@ -1,0 +1,99 @@
+name: 编译启文安装包
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    name: 编译 Windows EXE
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 安装依赖
+        run: npm install --legacy-peer-deps
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+      - name: 打包 Windows 安装包
+        run: npm run build:win -- --publish never
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-Windows
+          path: dist/*.exe
+          retention-days: 30
+          if-no-files-found: error
+
+  build-mac-arm64:
+    runs-on: macos-13
+    name: 编译 macOS Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 安装依赖
+        run: npm install --legacy-peer-deps
+      - name: 修复 app-builder 执行权限
+        run: |
+          APP_BUILDER=$(find node_modules -name "app-builder-arm64" -o -name "app-builder" 2>/dev/null | head -5)
+          echo "Found: $APP_BUILDER"
+          find node_modules/.bin -name "app-builder*" -exec chmod +x {} \; 2>/dev/null || true
+          find node_modules/app-builder-bin -type f -exec chmod +x {} \; 2>/dev/null || true
+          find node_modules/builder-util -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+      - name: 清理 dist
+        run: rm -rf dist
+      - name: 打包 macOS DMG (arm64)
+        run: npm run build:mac -- --publish never --arch arm64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          DEBUG: 'electron-builder'
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-macOS-AppleSilicon
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  build-mac-x64:
+    runs-on: macos-13
+    name: 编译 macOS Intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 安装依赖
+        run: npm install --legacy-peer-deps
+      - name: 构建 React 界面
+        run: npm run build:renderer
+        env:
+          CI: 'false'
+      - name: 清理 dist
+        run: rm -rf dist
+      - name: 打包 macOS DMG (x64)
+        run: npm run build:mac -- --publish never --arch x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 启文-macOS-Intel
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 30
+          if-no-files-found: error
