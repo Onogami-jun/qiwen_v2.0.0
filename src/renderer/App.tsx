@@ -688,7 +688,8 @@ const OrgManageViewWrapper: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    if (!user || (s: any) => s.auth.isLocalMode) { setLoading(false); return; }
+    const isLocalMode = !user || !user.email;
+    if (isLocalMode) { setLoading(false); return; }
     import('./services/cloudSync').then(({ cloudSync }) => {
       cloudSync.getMyOrganizations().then(orgs => {
         if (orgs.length > 0) setOrgId(orgs[0].id);
