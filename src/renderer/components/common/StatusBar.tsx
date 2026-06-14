@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { setFindOpen, setWordGoal } from '../../store/slices/editorSlice';
 import { ipc } from '../../utils/ipc';
+import { SyncStatusBar } from './SyncStatusBar';
 
 // ── Pomodoro ───────────────────────────────────────────────
 type PomState = 'idle' | 'running' | 'paused' | 'break';
@@ -313,6 +314,13 @@ export const StatusBar: React.FC = () => {
         {item(
           <><div style={{ width: 5, height: 5, borderRadius: '50%', background: isLocalMode ? 'var(--color-warning)' : 'var(--color-success)' }} />{isLocalMode ? '本地模式' : user?.plan === 'PRO' ? '专业版' : '免费版'}</>,
           isLocalMode ? '数据存储在本地' : `登录账号：${user?.displayName}`
+        )}
+
+        {/* 云同步状态 */}
+        {!isLocalMode && (
+          <div style={{ display: 'flex', alignItems: 'center', padding: '0 6px', height: '100%' }}>
+            <SyncStatusBar />
+          </div>
         )}
       </div>
     </div>
