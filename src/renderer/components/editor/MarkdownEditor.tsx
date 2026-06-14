@@ -31,6 +31,8 @@ import { updateStats, updateCursor } from '../../store/slices/editorSlice';
 import { setDocumentContent } from '../../store/slices/documentsSlice';
 import { markTabDirty } from '../../store/slices/appSlice';
 import { autoSave } from '../../utils/autoSave';
+import { useCollaboration, OnlineAvatars } from './CollaborationExtension';
+import { CommentPanel } from './CommentPanel';
 
 // ── WikiLink 双向链接扩展 ──────────────────────────────────
 // 将 [[文档名]] 渲染为高亮可点击链接
@@ -89,6 +91,8 @@ interface MarkdownEditorProps {
   documentId: string;
   readOnly?: boolean;
   onContentChange?: (content: string) => void;
+  collaborationEnabled?: boolean;
+  showComments?: boolean;
 }
 
 const FloatingToolbar: React.FC<{ editor: any }> = ({ editor }) => {
@@ -229,12 +233,18 @@ const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
   );
 };
 
-export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, readOnly = false, onContentChange }) => {
+export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, readOnly = false, onContentChange, collaborationEnabled = false, showComments = false }) => {
   const dispatch = useDispatch<AppDispatch>();
   const doc = useSelector((s: RootState) => s.documents.openDocuments[documentId]);
   const initialized = useRef(false);
   const lastHtml = useRef('');
   const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 实时协作
+  const { onlineUsers, isConnected } = useCollaboration(documentId, collaborationEnabled);
+
+  // 评论面板
+  const [showCommentPanel, setShowCommentPanel] = React.useState(showComments);
 
   // AI Copilot 补全
   const [copilotSuggestion, setCopilotSuggestion] = React.useState('');
@@ -408,7 +418,38 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
   const LANG_LABELS: Record<string, string> = { '': '纯文本', javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python', java: 'Java', c: 'C', cpp: 'C++', csharp: 'C#', go: 'Go', rust: 'Rust', bash: 'Bash/Shell', sql: 'SQL', html: 'HTML', css: 'CSS', json: 'JSON', yaml: 'YAML', markdown: 'Markdown', xml: 'XML', php: 'PHP', ruby: 'Ruby', swift: 'Swift', kotlin: 'Kotlin', latex: 'LaTeX' };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', position: 'relative' }}>
+    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: '100%' }}>
+      {/* 主编辑区 */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', position: 'relative' }}>
+
+        {/* 在线协作者头像（右上角） */}
+        {onlineUsers.length > 0 && (
+          <div style={{ position: 'absolute', top: 8, right: showCommentPanel ? 336 : 56, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <OnlineAvatars users={onlineUsers} />
+            {isConnected && (
+              <span style={{ fontSize: 10, color: '#52c97a', background: '#52c97a18', padding: '2px 7px', borderRadius: 10, border: '1px solid #52c97a30' }}>
+                实时协作中
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 评论面板开关按钮 */}
+        <button
+          onClick={() => setShowCommentPanel(v => !v)}
+          title="评论面板"
+          style={{
+            position: 'absolute', top: 8, right: 12, zIndex: 20,
+            padding: '3px 10px', borderRadius: 6,
+            border: `1px solid ${showCommentPanel ? 'var(--accent)' : 'var(--border)'}`,
+            background: showCommentPanel ? 'rgba(200,169,110,0.15)' : 'var(--bg-surface2)',
+            color: showCommentPanel ? 'var(--accent)' : 'var(--text-tertiary)',
+            cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit',
+          }}
+        >
+          💬
+        </button>
+
       <FloatingToolbar editor={editor} />
       {/* 代码块语言选择器（via CSS class注入，点击代码块时弹出） */}
       <style>{`
@@ -463,6 +504,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
               <button onClick={() => setCopilotSuggestion('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
             </>
           )}
+        </div>
+      )}
+      </div>
+
+      {/* 评论面板 */}
+      {showCommentPanel && (
+        <div style={{ width: 320, flexShrink: 0, borderLeft: '1px solid var(--border)' }}>
+          <CommentPanel documentId={documentId} />
         </div>
       )}
     </div>
