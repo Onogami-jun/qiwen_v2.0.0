@@ -272,6 +272,7 @@ export const SettingsView: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const settings = useSelector((s: RootState) => s.settings);
   const [active, setActive] = useState<SettingSection>('appearance');
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => { dispatch(loadSettings()); }, [dispatch]);
   const save = (key: keyof AppSettings, value: any) => dispatch(saveSetting({ key, value }));
@@ -332,7 +333,38 @@ export const SettingsView: React.FC = () => {
               <Select value={settings.language} onChange={v => save('language', v as AppSettings['language'])} options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} />
             </Row>
           </Section>
+          <Section title="职业与偏好">
+            <Row label="重新选择职业" desc="重新配置适合你职业的插件和功能">
+              <button
+                onClick={() => setShowOnboarding(true)}
+                style={{
+                  padding: '5px 14px', background: 'var(--bg-surface3)',
+                  border: '0.5px solid var(--border-md)', borderRadius: 7,
+                  fontSize: 12.5, color: 'var(--accent)', cursor: 'pointer',
+                  fontFamily: 'inherit', fontWeight: 500,
+                }}
+              >
+                重新引导 →
+              </button>
+            </Row>
+          </Section>
         </>}
+
+        {/* 职业引导浮层 */}
+        {showOnboarding && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} onClick={() => setShowOnboarding(false)}>
+            <div onClick={e => e.stopPropagation()} style={{
+              width: 640, maxHeight: '85vh', overflowY: 'auto',
+              borderRadius: 18, boxShadow: '0 32px 80px rgba(0,0,0,0.5)',
+            }}>
+              <OnboardingPage onComplete={() => setShowOnboarding(false)} />
+            </div>
+          </div>
+        )}
 
         {active === 'editor' && <>
           <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 24 }}>编辑器</div>
