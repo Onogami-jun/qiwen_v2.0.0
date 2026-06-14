@@ -16,13 +16,10 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            arch: arm64,x64
           - os: windows-latest
             platform: win
-            arch: x64
           - os: ubuntu-22.04
             platform: linux
-            arch: x64
 
     runs-on: ${{ matrix.os }}
     name: 构建 ${{ matrix.platform }}
@@ -35,28 +32,47 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: 安装系统依赖（Linux）
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libdrm-dev \
+            libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev \
+            libxkbcommon-dev libpango1.0-dev libasound2-dev
+
       - name: 安装依赖
-        run: npm ci
+        run: npm install --legacy-peer-deps
+        env:
+          CI: 'true'
+          npm_config_runtime: electron
+          npm_config_target: 31.7.7
+          npm_config_disturl: https://electronjs.org/headers
+          npm_config_build_from_source: false
 
       - name: 构建 React
         run: npm run build:renderer
         env:
           CI: 'false'
-          REACT_APP_API_URL: ${{ secrets.API_URL }}
+          # ✅ 修复：注入 Supabase 环境变量（之前缺失导致云功能白屏）
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
-      - name: 打包 Electron (macOS)
+      - name: 打包 Electron（macOS）
         if: matrix.platform == 'mac'
         run: npm run build:mac -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: 打包 Electron (Windows)
+      - name: 打包 Electron（Windows）
         if: matrix.platform == 'win'
         run: npm run build:win -- --publish never
 
-      - name: 打包 Electron (Linux)
+      - name: 打包 Electron（Linux）
         if: matrix.platform == 'linux'
         run: npm run build:linux -- --publish never
+
+      - name: 查看产物
+        run: ls -lh dist/
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4

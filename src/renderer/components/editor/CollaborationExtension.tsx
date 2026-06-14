@@ -2,28 +2,20 @@
  * CollaborationExtension.tsx — Y.js 实时协作扩展
  * src/renderer/components/editor/CollaborationExtension.tsx
  *
- * 功能：
- * - Y.js CRDT 协作文档（冲突自动解决）
- * - Supabase Realtime 作为 Y.js 传输层
- * - 多光标显示（头像 + 颜色）
- * - 在线成员列表
- *
- * 使用方式：在 MarkdownEditor.tsx 里替换普通 content 为协作模式
+ * 变更：useCollaboration hook 现在返回 ydoc 和 provider，
+ * 供 MarkdownEditor 直接传给 TipTap Collaboration extension
  */
 import React, { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { supabase } from '../../lib/supabase';
 
-// ── 颜色池（给每个协作者分配唯一颜色）──────────────────────────
-
+// ── 颜色池 ────────────────────────────────────────────────────
 const CURSOR_COLORS = [
   '#c8a96e', '#52c97a', '#5b9cf6', '#e87a7a', '#b87aed',
   '#f0a050', '#50c8c8', '#e0c050', '#c850a0', '#50e0a0',
 ];
-
 let colorIndex = 0;
 const userColorMap = new Map<string, string>();
-
 function getUserColor(userId: string): string {
   if (!userColorMap.has(userId)) {
     userColorMap.set(userId, CURSOR_COLORS[colorIndex % CURSOR_COLORS.length]);
@@ -32,8 +24,7 @@ function getUserColor(userId: string): string {
   return userColorMap.get(userId)!;
 }
 
-// ── SupabaseProvider — 替代 WebSocket 的 Realtime 传输 ───────────
-
+// ── SupabaseProvider ───────────────────────────────────────────
 export class SupabaseProvider {
   private ydoc: Y.Doc;
   private documentId: string;
@@ -41,10 +32,11 @@ export class SupabaseProvider {
   private awareness: Map<number, any> = new Map();
   private onUpdate?: (update: Uint8Array) => void;
   private onAwarenessChange?: (states: Map<number, any>) => void;
-  private userId: string = '';
-  private userName: string = '';
-  private userColor: string = '#c8a96e';
+  userId: string = '';
+  userName: string = '';
+  userColor: string = '#c8a96e';
   private connected = false;
+  private saveTimer: any = null;
 
   constructor(documentId: string, ydoc: Y.Doc, options?: {
     onUpdate?: (update: Uint8Array) => void;
@@ -65,12 +57,11 @@ export class SupabaseProvider {
       this.userColor = getUserColor(user.id);
     }
 
-    // 从 Supabase 加载最新的 ydoc 状态
     await this.loadInitialState();
 
-    // 监听本地 Y.js 更新 → 广播给其他人
+    // 监听本地 Y.js 变更 → 广播
     this.ydoc.on('update', (update: Uint8Array, origin: any) => {
-      if (origin === this) return; // 避免循环
+      if (origin === this) return;
       this.broadcastUpdate(update);
     });
 
@@ -103,8 +94,11 @@ export class SupabaseProvider {
       .subscribe(async (status: string) => {
         if (status === 'SUBSCRIBED') {
           this.connected = true;
-          // 广播自己的在线状态
-          await this.channel.track({ userId: this.userId, userName: this.userName, userColor: this.userColor });
+          await this.channel.track({
+            userId: this.userId,
+            userName: this.userName,
+            userColor: this.userColor,
+          });
         }
       });
   }
@@ -125,17 +119,14 @@ export class SupabaseProvider {
 
   private async broadcastUpdate(update: Uint8Array) {
     if (!this.connected) return;
-    // 广播给其他客户端
     await this.channel.send({
       type: 'broadcast',
       event: 'ydoc_update',
       payload: { update: Array.from(update), userId: this.userId },
     });
-    // 异步保存到 Supabase（防抖 2s）
     this.scheduleSave();
   }
 
-  private saveTimer: any = null;
   private scheduleSave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(async () => {
@@ -149,21 +140,22 @@ export class SupabaseProvider {
     }, 2000);
   }
 
-  /** 广播光标位置 */
+  /** 广播光标位置（由 CollaborationCursor 调用） */
   async updateCursor(cursor: { anchor: any; head: any } | null) {
     if (!this.connected) return;
     await this.channel.send({
       type: 'broadcast',
       event: 'awareness',
       payload: {
-        userId: this.userId, userName: this.userName,
-        userColor: this.userColor, cursor,
+        userId: this.userId,
+        userName: this.userName,
+        userColor: this.userColor,
+        cursor,
         clientId: this.ydoc.clientID,
       },
     });
   }
 
-  /** 获取当前所有在线用户 */
   getOnlineUsers(): { id: string; name: string; color: string }[] {
     return Array.from(this.awareness.values())
       .filter(a => Date.now() - a.lastSeen < 30_000)
@@ -177,15 +169,15 @@ export class SupabaseProvider {
   }
 }
 
-// ── React Hook — 在编辑器里使用协作 ────────────────────────────
-
-
+// ── CollabUser ─────────────────────────────────────────────────
 export interface CollabUser {
   id: string;
   name: string;
   color: string;
 }
 
+// ── useCollaboration Hook ──────────────────────────────────────
+// 现在返回 ydoc 和 provider，供 MarkdownEditor 传给 TipTap
 export function useCollaboration(documentId: string | null, enabled: boolean) {
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<SupabaseProvider | null>(null);
@@ -220,12 +212,15 @@ export function useCollaboration(documentId: string | null, enabled: boolean) {
     };
   }, [documentId, enabled]);
 
-  return { ydoc: ydocRef.current, provider: providerRef.current, onlineUsers, isConnected };
+  return {
+    ydoc: ydocRef.current,
+    provider: providerRef.current,
+    onlineUsers,
+    isConnected,
+  };
 }
 
-// ── OnlineAvatars — 顶部在线用户头像组件 ────────────────────────
-
-
+// ── OnlineAvatars ──────────────────────────────────────────────
 export const OnlineAvatars: React.FC<{ users: CollabUser[]; maxShow?: number }> = ({ users, maxShow = 5 }) => {
   if (users.length === 0) return null;
   const shown = users.slice(0, maxShow);
@@ -244,8 +239,11 @@ export const OnlineAvatars: React.FC<{ users: CollabUser[]; maxShow?: number }> 
           boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
         }}>
           {u.name.slice(0, 1).toUpperCase()}
-          {/* 在线指示点 */}
-          <div style={{ position: 'absolute', bottom: 0, right: 0, width: 8, height: 8, borderRadius: '50%', background: '#52c97a', border: '1.5px solid var(--bg-base)' }} />
+          <div style={{
+            position: 'absolute', bottom: 0, right: 0,
+            width: 8, height: 8, borderRadius: '50%',
+            background: '#52c97a', border: '1.5px solid var(--bg-base)',
+          }} />
         </div>
       ))}
       {extra > 0 && (

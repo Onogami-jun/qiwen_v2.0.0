@@ -1,10 +1,12 @@
 /**
  * CodeViewerPage.tsx — 代码查看器主页面
+ * 修复：导出批注时从 cloudSync.getCodeAnnotations() 拉取真实数据
  */
 import React, { useState, useCallback } from 'react';
 import { CodeViewer } from './CodeViewer';
 import { CodeSearch } from './CodeSearch';
 import { exportAnnotationsToMarkdown, exportAnnotationsToHTML, exportToJSON, downloadFile } from '../../utils/exportAnnotations';
+import { cloudSync } from '../../services/cloudSync';
 import { ipc } from '../../utils/ipc';
 
 interface FileNode {
@@ -36,6 +38,7 @@ export const CodeViewerPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [leftPanel, setLeftPanel] = useState<'tree' | 'search'>('tree');
 
   const openFolder = async () => {
@@ -111,6 +114,64 @@ export const CodeViewerPage: React.FC = () => {
     }
   };
 
+  // ── 导出：从云端拉取真实批注数据 ─────────────────────────────
+  const handleExport = useCallback(async (format: 'md' | 'html' | 'json') => {
+    if (!openFile) return;
+    setExporting(true);
+    setShowExport(false);
+
+    const fileName = openFile.replace(/\\/g, '/').split('/').pop() || openFile;
+
+    try {
+      const rawAnnotations = await cloudSync.getCodeAnnotations('', openFile).catch(() => []);
+      const annotations = (rawAnnotations || []).map((a: any) => ({
+        id: a.id,
+        filePath: a.file_path || openFile,
+        lineStart: a.line_start,
+        lineEnd: a.line_end,
+        content: a.content,
+        authorName: a.user_profiles?.display_name || '未知用户',
+        createdAt: a.created_at,
+        isResolved: a.is_resolved || false,
+        replies: (a.code_annotation_replies || []).map((r: any) => ({
+          authorName: r.user_profiles?.display_name || '未知用户',
+          content: r.content,
+          createdAt: r.created_at,
+        })),
+      }));
+
+      let content: string;
+      let filename: string;
+      let mime: string;
+
+      if (format === 'md') {
+        content = exportAnnotationsToMarkdown(annotations, fileName);
+        filename = `${fileName}-批注.md`;
+        mime = 'text/markdown';
+      } else if (format === 'html') {
+        content = exportAnnotationsToHTML(annotations, fileName);
+        filename = `${fileName}-批注.html`;
+        mime = 'text/html';
+      } else {
+        content = exportToJSON(annotations, [], fileName);
+        filename = `${fileName}-批注.json`;
+        mime = 'application/json';
+      }
+
+      downloadFile(content, filename, mime);
+    } catch (e) {
+      console.error('[Export] failed:', e);
+      const content = format === 'json'
+        ? exportToJSON([], [], fileName)
+        : format === 'html'
+          ? exportAnnotationsToHTML([], fileName)
+          : exportAnnotationsToMarkdown([], fileName);
+      downloadFile(content, `${fileName}-批注.${format}`, format === 'json' ? 'application/json' : format === 'html' ? 'text/html' : 'text/markdown');
+    } finally {
+      setExporting(false);
+    }
+  }, [openFile]);
+
   const renderTree = (nodes: FileNode[], pathPrefix: number[] = [], depth = 0): React.ReactNode =>
     nodes.map((node, i) => {
       const currentPath = [...pathPrefix, i];
@@ -126,8 +187,7 @@ export const CodeViewerPage: React.FC = () => {
               color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
               background: isActive ? 'var(--accent-dim, rgba(200,169,110,0.1))' : 'transparent',
               borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
-              borderRadius: '0 6px 6px 0',
-              transition: 'background 0.1s',
+              borderRadius: '0 6px 6px 0', transition: 'background 0.1s',
             }}
             onMouseOver={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-surface2)'; }}
             onMouseOut={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
@@ -146,12 +206,8 @@ export const CodeViewerPage: React.FC = () => {
 
       {/* ── 左侧面板 ── */}
       <div style={{ width: 240, flexShrink: 0, background: 'var(--bg-surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-
-        {/* 面板头 */}
         <div style={{ padding: '12px 12px 0', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 10, padding: '0 2px' }}>
-            CODE
-          </div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 10, padding: '0 2px' }}>CODE</div>
           <div style={{ display: 'flex', gap: 2, marginBottom: -1 }}>
             {[{ id: 'tree', label: '文件' }, { id: 'search', label: '搜索' }].map(p => (
               <button key={p.id} onClick={() => setLeftPanel(p.id as any)} style={{
@@ -159,57 +215,26 @@ export const CodeViewerPage: React.FC = () => {
                 borderBottom: `2px solid ${leftPanel === p.id ? 'var(--accent)' : 'transparent'}`,
                 color: leftPanel === p.id ? 'var(--accent)' : 'var(--text-tertiary)',
                 cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'color 0.15s',
-              }}>
-                {p.label}
-              </button>
+              }}>{p.label}</button>
             ))}
           </div>
         </div>
 
         {leftPanel === 'tree' && <>
-          {/* 操作栏 */}
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={openFolder} style={{
-              flex: 1, padding: '6px 0', borderRadius: 7, border: '1px solid var(--border-md)',
-              background: 'var(--bg-surface2)', color: 'var(--accent)',
-              cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', fontWeight: 500,
-              transition: 'background 0.15s',
-            }}>
+            <button onClick={openFolder} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: '1px solid var(--border-md)', background: 'var(--bg-surface2)', color: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', fontWeight: 500 }}>
               📁 打开文件夹
             </button>
-            <button onClick={openSingleFile} style={{
-              padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)',
-              background: 'var(--bg-surface2)', color: 'var(--text-tertiary)',
-              cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
-            }} title="打开单个文件">
-              📄
-            </button>
+            <button onClick={openSingleFile} style={{ padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-surface2)', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }} title="打开单个文件">📄</button>
             {openFile && (
               <div style={{ position: 'relative' }}>
-                <button onClick={() => setShowExport(v => !v)} title="导出批注" style={{
-                  padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)',
-                  background: showExport ? 'var(--accent-dim, rgba(200,169,110,0.12))' : 'var(--bg-surface2)',
-                  color: showExport ? 'var(--accent)' : 'var(--text-tertiary)',
-                  cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
-                }}>↗</button>
+                <button onClick={() => setShowExport(v => !v)} disabled={exporting} title="导出批注" style={{ padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: showExport ? 'var(--accent-dim, rgba(200,169,110,0.12))' : 'var(--bg-surface2)', color: showExport ? 'var(--accent)' : 'var(--text-tertiary)', cursor: exporting ? 'wait' : 'pointer', fontSize: 12, fontFamily: 'inherit' }}>
+                  {exporting ? '⏳' : '↗'}
+                </button>
                 {showExport && (
-                  <div style={{
-                    position: 'absolute', top: '100%', right: 0, marginTop: 4,
-                    background: 'var(--bg-surface2)', border: '1px solid var(--border)',
-                    borderRadius: 9, zIndex: 100, minWidth: 160, overflow: 'hidden',
-                    boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
-                  }}>
-                    {[
-                      { label: '导出为 Markdown', fn: () => { downloadFile(exportAnnotationsToMarkdown([], openFile.replace(/[\\\/\\\\]/g, '/').split('/').pop() || ''), 'annotations.md', 'text/markdown'); } },
-                      { label: '导出为 HTML', fn: () => { downloadFile(exportAnnotationsToHTML([], openFile.replace(/[\\\/\\\\]/g, '/').split('/').pop() || ''), 'annotations.html', 'text/html'); } },
-                      { label: '导出为 JSON', fn: () => { downloadFile(exportToJSON([], [], openFile.replace(/[\\\/\\\\]/g, '/').split('/').pop() || ''), 'annotations.json', 'application/json'); } },
-                    ].map(item => (
-                      <button key={item.label} onClick={() => { item.fn(); setShowExport(false); }} style={{
-                        display: 'block', width: '100%', padding: '9px 14px', background: 'none',
-                        border: 'none', color: 'var(--text-secondary)', cursor: 'pointer',
-                        fontSize: 12.5, textAlign: 'left', fontFamily: 'inherit',
-                        borderBottom: '1px solid var(--border)',
-                      }}
+                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'var(--bg-surface2)', border: '1px solid var(--border)', borderRadius: 9, zIndex: 100, minWidth: 160, overflow: 'hidden', boxShadow: '0 8px 28px rgba(0,0,0,0.35)' }}>
+                    {([{ label: '导出为 Markdown', format: 'md' as const }, { label: '导出为 HTML', format: 'html' as const }, { label: '导出为 JSON', format: 'json' as const }]).map(item => (
+                      <button key={item.format} onClick={() => handleExport(item.format)} style={{ display: 'block', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, textAlign: 'left', fontFamily: 'inherit' }}
                         onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-surface3)')}
                         onMouseOut={e => (e.currentTarget.style.background = 'none')}>
                         {item.label}
@@ -221,23 +246,14 @@ export const CodeViewerPage: React.FC = () => {
             )}
           </div>
 
-          {/* 根目录路径 */}
           {rootPath && (
-            <div style={{
-              padding: '5px 12px', fontSize: 10.5, color: 'var(--text-tertiary)',
-              letterSpacing: '0.5px',
-              borderBottom: '1px solid var(--border)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>
+            <div style={{ padding: '5px 12px', fontSize: 10.5, color: 'var(--text-tertiary)', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
               {rootPath.replace(/\\/g, '/').split('/').pop()}
             </div>
           )}
 
-          {/* 文件树 */}
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 0' }}>
-            {loading && (
-              <div style={{ padding: 20, color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', opacity: 0.6 }}>扫描目录…</div>
-            )}
+            {loading && <div style={{ padding: 20, color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', opacity: 0.6 }}>扫描目录…</div>}
             {!loading && !rootPath && (
               <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12.5, lineHeight: 2.2, opacity: 0.7 }}>
                 <div style={{ fontSize: 32, marginBottom: 10, opacity: 0.5 }}>📁</div>
@@ -260,71 +276,35 @@ export const CodeViewerPage: React.FC = () => {
 
       {/* ── 右侧编辑区 ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-editor, #1a1a1a)' }}>
-        {/* 标签栏 */}
         {openFiles.length > 0 && (
-          <div style={{
-            display: 'flex', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)',
-            overflowX: 'auto', flexShrink: 0,
-          }}>
+          <div style={{ display: 'flex', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0 }}>
             {openFiles.map(f => {
               const name = f.replace(/\\/g, '/').split('/').pop() || f;
               const isActive = activeTab === f;
               return (
                 <div key={f} onClick={() => { setActiveTab(f); setOpenFile(f); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '7px 14px', cursor: 'pointer', flexShrink: 0, fontSize: 12.5,
-                    background: isActive ? 'var(--bg-editor, #1a1a1a)' : 'transparent',
-                    color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    borderBottom: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
-                    borderRight: '1px solid var(--border)',
-                    transition: 'color 0.1s',
-                  }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 14px', cursor: 'pointer', flexShrink: 0, fontSize: 12.5, background: isActive ? 'var(--bg-editor, #1a1a1a)' : 'transparent', color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)', borderBottom: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`, borderRight: '1px solid var(--border)', transition: 'color 0.1s' }}>
                   <span style={{ fontSize: 12 }}>{getFileIcon(name)}</span>
                   <span>{name}</span>
-                  <span
-                    onClick={e => closeTab(f, e)}
-                    style={{ fontSize: 15, lineHeight: 1, color: 'var(--text-tertiary)', borderRadius: 3, padding: '0 1px' }}
+                  <span onClick={e => closeTab(f, e)} style={{ fontSize: 15, lineHeight: 1, color: 'var(--text-tertiary)', borderRadius: 3, padding: '0 1px' }}
                     onMouseOver={e => (e.currentTarget.style.color = '#e87a7a')}
-                    onMouseOut={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}>
-                    ×
-                  </span>
+                    onMouseOut={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}>×</span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* 内容区 */}
         {openFile ? (
           <div style={{ flex: 1, minHeight: 0 }}>
             <CodeViewer filePath={openFile} theme="dark" />
           </div>
         ) : (
-          /* ✅ 修复：居中显示 empty state，覆盖整个右侧区域 */
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100%',
-            height: '100%',
-            gap: 10,
-          }}>
-            <div style={{
-              fontSize: 48, opacity: 0.08,
-              fontFamily: 'monospace', fontWeight: 700,
-              letterSpacing: -2,
-            }}>{'</>'}</div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', gap: 10 }}>
+            <div style={{ fontSize: 48, opacity: 0.08, fontFamily: 'monospace', fontWeight: 700, letterSpacing: -2 }}>{'</>'}</div>
             <div style={{ fontSize: 14, color: 'var(--text-tertiary)', fontWeight: 500, opacity: 0.7, marginTop: 4 }}>打开文件夹或文件开始查看</div>
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', opacity: 0.4 }}>点击行号可添加批注和评论</div>
-            <button onClick={openFolder} style={{
-              marginTop: 16, padding: '8px 20px', borderRadius: 8,
-              border: '1px solid var(--border-md)', background: 'var(--bg-surface2)',
-              color: 'var(--accent)', cursor: 'pointer', fontSize: 13,
-              fontFamily: 'inherit', fontWeight: 500,
-            }}>
+            <button onClick={openFolder} style={{ marginTop: 16, padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'var(--bg-surface2)', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', fontWeight: 500 }}>
               📁 打开文件夹
             </button>
           </div>

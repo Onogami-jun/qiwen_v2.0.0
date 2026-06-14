@@ -17,6 +17,9 @@ import TextAlign from '@tiptap/extension-text-align';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import CharacterCount from '@tiptap/extension-character-count';
+// ── Y.js TipTap 协作扩展 ──────────────────────────────────────
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import { SlashCommandExtension } from './SlashCommand';
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -34,10 +37,7 @@ import { autoSave } from '../../utils/autoSave';
 import { useCollaboration, OnlineAvatars } from './CollaborationExtension';
 import { CommentPanel } from './CommentPanel';
 
-// ── WikiLink 双向链接扩展 ──────────────────────────────────
-// 将 [[文档名]] 渲染为高亮可点击链接
-
-
+// ── WikiLink 双向链接扩展 ──────────────────────────────────────
 const WikiLinkExtension = Extension.create({
   name: 'wikilink',
   addProseMirrorPlugins() {
@@ -64,7 +64,6 @@ const WikiLinkExtension = Extension.create({
                 );
               }
             });
-
             return DecorationSet.create(doc, decorations);
           },
           handleClick(view, pos, event) {
@@ -72,7 +71,6 @@ const WikiLinkExtension = Extension.create({
             if (target.classList.contains('wikilink')) {
               const title = target.getAttribute('data-wikilink');
               if (title) {
-                // 触发自定义事件，App.tsx 层处理跳转
                 window.dispatchEvent(new CustomEvent('qiwen:open-wikilink', { detail: { title } }));
                 return true;
               }
@@ -84,8 +82,6 @@ const WikiLinkExtension = Extension.create({
     ];
   },
 });
-// LaTeX 公式支持
-// 代码块语法高亮
 
 interface MarkdownEditorProps {
   documentId: string;
@@ -95,6 +91,7 @@ interface MarkdownEditorProps {
   showComments?: boolean;
 }
 
+// ── FloatingToolbar ────────────────────────────────────────────
 const FloatingToolbar: React.FC<{ editor: any }> = ({ editor }) => {
   const btn = (active: boolean): React.CSSProperties => ({
     padding: '4px 8px', border: 'none', borderRadius: 5,
@@ -114,63 +111,63 @@ const FloatingToolbar: React.FC<{ editor: any }> = ({ editor }) => {
         border: '0.5px solid rgba(255,255,255,0.12)', borderRadius: 10,
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)',
       }}>
-      <button style={btn(editor.isActive('bold'))} title="加粗 Ctrl+B"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleBold().run(); }}>
-        <strong>B</strong></button>
-      <button style={btn(editor.isActive('italic'))} title="斜体 Ctrl+I"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleItalic().run(); }}>
-        <em>I</em></button>
-      <button style={btn(editor.isActive('underline'))} title="下划线 Ctrl+U"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleUnderline().run(); }}>
-        <span style={{ textDecoration: 'underline' }}>U</span></button>
-      <button style={btn(editor.isActive('strike'))} title="删除线"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleStrike().run(); }}>
-        <span style={{ textDecoration: 'line-through' }}>S</span></button>
-      <button style={btn(editor.isActive('highlight'))} title="高亮"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHighlight().run(); }}>
-        ✦</button>
-      <div style={sep} />
-      <button style={btn(editor.isActive('heading', { level: 1 }))} title="标题1"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHeading({ level: 1 }).run(); }}>
-        H1</button>
-      <button style={btn(editor.isActive('heading', { level: 2 }))} title="标题2"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHeading({ level: 2 }).run(); }}>
-        H2</button>
-      <div style={sep} />
-      <button style={btn(editor.isActive('code'))} title="行内代码"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleCode().run(); }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
-      <button style={btn(editor.isActive('link'))} title="链接"
-        onMouseDown={e => {
-          e.preventDefault();
-          const url = window.prompt('输入链接地址：');
-          if (url) editor.chain().focus().setLink({ href: url }).run();
-          else editor.chain().focus().unsetLink().run();
-        }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
-      <div style={sep} />
-      <AIInlineMenu editor={editor} />
+        <button style={btn(editor.isActive('bold'))} title="加粗 Ctrl+B"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleBold().run(); }}>
+          <strong>B</strong></button>
+        <button style={btn(editor.isActive('italic'))} title="斜体 Ctrl+I"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleItalic().run(); }}>
+          <em>I</em></button>
+        <button style={btn(editor.isActive('underline'))} title="下划线 Ctrl+U"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleUnderline().run(); }}>
+          <span style={{ textDecoration: 'underline' }}>U</span></button>
+        <button style={btn(editor.isActive('strike'))} title="删除线"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleStrike().run(); }}>
+          <span style={{ textDecoration: 'line-through' }}>S</span></button>
+        <button style={btn(editor.isActive('highlight'))} title="高亮"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHighlight().run(); }}>
+          ✦</button>
+        <div style={sep} />
+        <button style={btn(editor.isActive('heading', { level: 1 }))} title="标题1"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHeading({ level: 1 }).run(); }}>
+          H1</button>
+        <button style={btn(editor.isActive('heading', { level: 2 }))} title="标题2"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleHeading({ level: 2 }).run(); }}>
+          H2</button>
+        <div style={sep} />
+        <button style={btn(editor.isActive('code'))} title="行内代码"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleCode().run(); }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></button>
+        <button style={btn(editor.isActive('link'))} title="链接"
+          onMouseDown={e => {
+            e.preventDefault();
+            const url = window.prompt('输入链接地址：');
+            if (url) editor.chain().focus().setLink({ href: url }).run();
+            else editor.chain().focus().unsetLink().run();
+          }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button>
+        <div style={sep} />
+        <AIInlineMenu editor={editor} />
       </div>
     </BubbleMenu>
   );
 };
 
-// ── AI 内联操作菜单 ────────────────────────────────────────
+// ── AI 内联操作菜单 ────────────────────────────────────────────
 const BUILTIN_KEY = 'ark-0f0fd51c-1395-45bd-9df0-29a195257d96-5ab55';
 const BUILTIN_MDL = 'doubao-seed-2-0-pro-260215';
 function getK() { try { return localStorage.getItem('qiwen_doubao_apikey') || BUILTIN_KEY; } catch { return BUILTIN_KEY; } }
 function getM() { try { return localStorage.getItem('qiwen_doubao_model') || BUILTIN_MDL; } catch { return BUILTIN_MDL; } }
 
 const AI_OPS = [
-  { id: 'polish',    label: '润色',   prompt: (t: string) => `请润色以下文字，保持原意，提升表达质量，只返回改写后的文字，不要解释：\n\n${t}` },
-  { id: 'expand',   label: '扩写',   prompt: (t: string) => `请扩写以下文字，增加细节和论述，保持原有风格，只返回扩写后的文字：\n\n${t}` },
-  { id: 'shorten',  label: '缩写',   prompt: (t: string) => `请精简以下文字，保留核心意思，删除冗余内容，只返回精简后的文字：\n\n${t}` },
-  { id: 'translate',label: '译中文', prompt: (t: string) => `请将以下文字翻译为中文，只返回译文，不要解释：\n\n${t}` },
-  { id: 'translate_en', label: '译英文', prompt: (t: string) => `Please translate the following text to English. Return only the translation:\n\n${t}` },
-  { id: 'continue', label: '续写',   prompt: (t: string) => `请根据以下内容自然地续写100-200字，保持风格一致，只返回续写的部分：\n\n${t}` },
+  { id: 'polish',      label: '润色',   prompt: (t: string) => `请润色以下文字，保持原意，提升表达质量，只返回改写后的文字，不要解释：\n\n${t}` },
+  { id: 'expand',      label: '扩写',   prompt: (t: string) => `请扩写以下文字，增加细节和论述，保持原有风格，只返回扩写后的文字：\n\n${t}` },
+  { id: 'shorten',     label: '缩写',   prompt: (t: string) => `请精简以下文字，保留核心意思，删除冗余内容，只返回精简后的文字：\n\n${t}` },
+  { id: 'translate',   label: '译中文', prompt: (t: string) => `请将以下文字翻译为中文，只返回译文，不要解释：\n\n${t}` },
+  { id: 'translate_en',label: '译英文', prompt: (t: string) => `Please translate the following text to English. Return only the translation:\n\n${t}` },
+  { id: 'continue',    label: '续写',   prompt: (t: string) => `请根据以下内容自然地续写100-200字，保持风格一致，只返回续写的部分：\n\n${t}` },
 ];
 
 const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
@@ -188,13 +185,10 @@ const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
     try {
       const res = await (window as any).electronAPI?.invoke('ai:chat-stream', {
         messages: [{ role: 'user', content: op.prompt(selectedText) }],
-        apiKey: getK(),
-        model: getM(),
+        apiKey: getK(), model: getM(),
       });
       const result = res?.trim();
-      if (result) {
-        editor.chain().focus().deleteSelection().insertContent(result).run();
-      }
+      if (result) editor.chain().focus().deleteSelection().insertContent(result).run();
     } catch (e) {
       console.error('[AI inline] error:', e);
     } finally {
@@ -233,31 +227,105 @@ const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
   );
 };
 
-export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, readOnly = false, onContentChange, collaborationEnabled = false, showComments = false }) => {
+// ── Main Editor ────────────────────────────────────────────────
+export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
+  documentId,
+  readOnly = false,
+  onContentChange,
+  collaborationEnabled = false,
+  showComments = false,
+}) => {
   const dispatch = useDispatch<AppDispatch>();
   const doc = useSelector((s: RootState) => s.documents.openDocuments[documentId]);
+  const authUser = useSelector((s: RootState) => (s as any).auth?.user);
   const initialized = useRef(false);
   const lastHtml = useRef('');
   const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 实时协作
-  const { onlineUsers, isConnected } = useCollaboration(documentId, collaborationEnabled);
+  // ── 实时协作：获取 ydoc 和 provider ─────────────────────────
+  const { ydoc, provider, onlineUsers, isConnected } = useCollaboration(documentId, collaborationEnabled);
 
   // 评论面板
   const [showCommentPanel, setShowCommentPanel] = React.useState(showComments);
 
-  // AI Copilot 补全
+  // AI Copilot
   const [copilotSuggestion, setCopilotSuggestion] = React.useState('');
   const [copilotLoading, setCopilotLoading] = React.useState(false);
   const copilotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const copilotEnabled = React.useRef(true); // 可通过设置关闭
+  const copilotEnabled = React.useRef(true);
+
+  // ── useEditor：协作模式 vs 普通模式 ──────────────────────────
+  // 关键：协作模式下必须用 Y.js 的 XmlFragment 作为内容源，
+  // 且 StarterKit 的 history 必须禁用（Y.js 自带 undo/redo）
+  const collabExtensions = collaborationEnabled && ydoc ? [
+    Collaboration.configure({ document: ydoc }),
+    CollaborationCursor.configure({
+      provider: {
+        // CollaborationCursor 需要一个带 awareness 的 provider 接口
+        // 我们用 SupabaseProvider 桥接实现
+        awareness: {
+          getLocalState: () => ({
+            user: {
+              name: authUser?.user_metadata?.display_name || authUser?.email?.split('@')[0] || '协作者',
+              color: provider ? (provider as any).userColor : '#c8a96e',
+            },
+          }),
+          setLocalStateField: (field: string, value: any) => {
+            if (field === 'cursor' && provider) {
+              provider.updateCursor(value);
+            }
+          },
+          on: () => {},
+          off: () => {},
+          states: new Map(),
+        },
+      },
+      user: {
+        name: authUser?.user_metadata?.display_name || authUser?.email?.split('@')[0] || '协作者',
+        color: provider ? (provider as any).userColor : '#c8a96e',
+      },
+      render: (user: any) => {
+        // 渲染远端光标
+        const cursor = document.createElement('span');
+        cursor.classList.add('collab-cursor');
+        cursor.style.cssText = `
+          border-left: 2px solid ${user.color};
+          margin-left: -1px;
+          margin-right: -1px;
+          position: relative;
+          word-break: normal;
+          pointer-events: none;
+        `;
+        const label = document.createElement('div');
+        label.style.cssText = `
+          position: absolute;
+          top: -20px;
+          left: -1px;
+          font-size: 10px;
+          font-weight: 600;
+          white-space: nowrap;
+          background: ${user.color};
+          color: #fff;
+          padding: 2px 6px;
+          border-radius: 4px 4px 4px 0;
+          pointer-events: none;
+          user-select: none;
+          z-index: 100;
+        `;
+        label.textContent = user.name;
+        cursor.appendChild(label);
+        return cursor;
+      },
+    }),
+  ] : [];
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3, 4, 5, 6] },
-        // 禁用 StarterKit 内置的 codeBlock，改用 CodeBlockLowlight
         codeBlock: false,
+        // 协作模式下禁用 history，Y.js 接管 undo/redo
+        history: collaborationEnabled ? false : undefined,
       }),
       Placeholder.configure({ placeholder: '开始写作...', emptyEditorClass: 'is-editor-empty' }),
       Typography,
@@ -273,33 +341,29 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
       TaskList,
       TaskItem.configure({ nested: true }),
       CharacterCount,
-      // 代码块语法高亮：支持常用语言，自动检测
       CodeBlockLowlight.configure({
         lowlight: createLowlight(common),
         defaultLanguage: null,
         HTMLAttributes: { class: 'code-block-lowlight' },
       }),
-      // LaTeX 数学公式（行内 $...$ 和块级 $$...$$）
       Mathematics,
       SlashCommandExtension,
       WikiLinkExtension,
+      // 协作扩展（ydoc 就绪后才注入）
+      ...collabExtensions,
     ],
-    content: '',
+    // 协作模式下内容由 Y.js 管理，不设 content
+    content: collaborationEnabled && ydoc ? undefined : '',
     editable: !readOnly,
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       if (html === lastHtml.current) return;
       lastHtml.current = html;
-
-      // 1. 通知 Redux 内容已变更（用于 AI 面板等读取最新内容）
       dispatch(setDocumentContent({ id: documentId, content: html }));
-      // 2. 标记 tab 为 dirty
       dispatch(markTabDirty({ id: documentId, dirty: true }));
-      // 3. 交给 autoSave 防抖，真正写 DB
-      autoSave.schedule(documentId, html);
-      // 4. 回调
+      // 非协作模式才走本地 autoSave；协作模式由 SupabaseProvider 负责持久化
+      if (!collaborationEnabled) autoSave.schedule(documentId, html);
       onContentChange?.(html);
-      // 5. 字数统计降频（800ms 防抖）
       if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
       statsTimerRef.current = setTimeout(() => {
         const text = editor.getText();
@@ -309,9 +373,20 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
         statsTimerRef.current = null;
       }, 800);
     },
-  });
+    // 光标变化：更新协作者 cursor（onSelectionUpdate）
+    onSelectionUpdate: ({ editor }) => {
+      if (!collaborationEnabled || !provider) return;
+      const { from, to, empty } = editor.state.selection;
+      if (empty) {
+        provider.updateCursor(null);
+      } else {
+        provider.updateCursor({ anchor: from, head: to });
+      }
+      dispatch(updateCursor({ from, to }));
+    },
+  }, [ydoc]); // ydoc 变化时重建 editor（协作会话切换）
 
-  // 暴露给工具栏；卸载时立即 flush 保存（切换文档/关闭时不丢内容）
+  // 暴露给工具栏
   useEffect(() => {
     if (!editor) return;
     (window as any).__activeEditor = editor;
@@ -320,14 +395,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
     return () => {
       if ((window as any).__editors) delete (window as any).__editors[documentId];
       if ((window as any).__activeEditor === editor) (window as any).__activeEditor = null;
-      // 组件卸载时立即把 pending 内容写入 DB，确保切换文档/窗口关闭时不丢数据
-      autoSave.flush(documentId).catch(() => {});
+      if (!collaborationEnabled) autoSave.flush(documentId).catch(() => {});
     };
-  }, [editor, documentId]);
+  }, [editor, documentId, collaborationEnabled]);
 
-  // 初始化内容
+  // 初始化内容（非协作模式）
   useEffect(() => {
-    if (!editor || initialized.current || !doc) return;
+    if (!editor || initialized.current || !doc || collaborationEnabled) return;
     initialized.current = true;
     editor.commands.setContent(doc.content || '', false);
     lastHtml.current = doc.content || '';
@@ -335,27 +409,26 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
     const cn = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
     const en = (text.match(/\b[a-zA-Z]+\b/g) || []).length;
     dispatch(updateStats({ wordCount: cn + en, charCount: text.length }));
-  }, [editor, doc, dispatch]);
+  }, [editor, doc, dispatch, collaborationEnabled]);
 
-  // 外部内容同步：只在没有 pending 编辑时才同步（避免覆盖用户正在输入的内容）
+  // 外部内容同步（非协作模式）
   useEffect(() => {
-    if (!editor || !doc?.content) return;
+    if (!editor || !doc?.content || collaborationEnabled) return;
     if (doc.content === lastHtml.current) return;
-    // 若 autoSave 有 pending 内容，说明用户正在编辑，不覆盖
     if (autoSave.hasPending()) return;
     editor.commands.setContent(doc.content, false);
     lastHtml.current = doc.content;
   }, [doc?.content]); // eslint-disable-line
 
-  // 失焦时立即保存当前文档
+  // 失焦保存（非协作模式）
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || collaborationEnabled) return;
     const handleBlur = () => autoSave.flush(documentId);
     editor.on('blur', handleBlur);
     return () => { editor.off('blur', handleBlur); };
-  }, [editor, documentId]);
+  }, [editor, documentId, collaborationEnabled]);
 
-  // AI Copilot：打字停顿 1.2 秒后触发补全
+  // AI Copilot
   useEffect(() => {
     if (!editor || readOnly) return;
     const onUpdate = () => {
@@ -364,20 +437,17 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
       if (copilotTimer.current) clearTimeout(copilotTimer.current);
       copilotTimer.current = setTimeout(async () => {
         const { empty, $from } = editor.state.selection;
-        if (!empty) return; // 有选中时不触发
-        // 取光标前 300 字作上下文
+        if (!empty) return;
         const pos = $from.pos;
         const text = editor.state.doc.textBetween(Math.max(0, pos - 300), pos, '\n');
         if (!text.trim() || text.trim().length < 10) return;
-        // 只在段落末尾（光标在行尾）时触发
         const lastChar = text[text.length - 1];
         if (lastChar === ' ' || lastChar === '\n') return;
         setCopilotLoading(true);
         try {
           const res = await (window as any).electronAPI?.invoke('ai:chat-stream', {
             messages: [{ role: 'user', content: `你是一位写作助手。请根据以下文字，续写10-30个字，语气自然流畅，只返回续写内容，不要解释或重复已有内容：\n\n${text}` }],
-            apiKey: getK(),
-            model: getM(),
+            apiKey: getK(), model: getM(),
           });
           if (res?.trim()) setCopilotSuggestion(res.trim().slice(0, 60));
         } catch {}
@@ -385,7 +455,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
       }, 1200);
     };
     editor.on('update', onUpdate);
-    // 任何按键（非 Tab）清空建议
     const onKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Tab' && copilotSuggestion) {
         e.preventDefault();
@@ -404,18 +473,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
     };
   }, [editor, readOnly, copilotSuggestion]);
 
-  // 清理 stats 计算定时器（必须在 early return 之前调用，遵守 Hook 规则）
   React.useEffect(() => {
-    return () => {
-      if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
-    };
+    return () => { if (statsTimerRef.current) clearTimeout(statsTimerRef.current); };
   }, []);
 
   if (!editor) return null;
-
-  // 代码块语言切换
-  const LANGS = ['', 'javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust', 'bash', 'sql', 'html', 'css', 'json', 'yaml', 'markdown', 'xml', 'php', 'ruby', 'swift', 'kotlin', 'latex'];
-  const LANG_LABELS: Record<string, string> = { '': '纯文本', javascript: 'JavaScript', typescript: 'TypeScript', python: 'Python', java: 'Java', c: 'C', cpp: 'C++', csharp: 'C#', go: 'Go', rust: 'Rust', bash: 'Bash/Shell', sql: 'SQL', html: 'HTML', css: 'CSS', json: 'JSON', yaml: 'YAML', markdown: 'Markdown', xml: 'XML', php: 'PHP', ruby: 'Ruby', swift: 'Swift', kotlin: 'Kotlin', latex: 'LaTeX' };
 
   return (
     <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: '100%' }}>
@@ -434,7 +496,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
           </div>
         )}
 
-        {/* 评论面板开关按钮 */}
+        {/* 评论面板开关 */}
         <button
           onClick={() => setShowCommentPanel(v => !v)}
           title="评论面板"
@@ -450,62 +512,68 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ documentId, read
           💬
         </button>
 
-      <FloatingToolbar editor={editor} />
-      {/* 代码块语言选择器（via CSS class注入，点击代码块时弹出） */}
-      <style>{`
-        .code-block-lowlight { position: relative; }
-        .code-block-lowlight::before {
-          content: attr(data-language);
-          position: absolute; top: 10px; right: 44px;
-          font-size: 11px; color: var(--text-tertiary);
-          font-family: var(--font-mono, monospace);
-          letter-spacing: 0.5px; pointer-events: none;
-          text-transform: uppercase; opacity: 0.7;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-      <EditorContent editor={editor} style={{ flex: 1, overflow: 'auto', height: '100%' }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-        onDrop={async (e) => {
-          e.preventDefault();
-          if (!editor) return;
-          const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-          for (const file of files) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-              const dataUrl = ev.target?.result as string;
-              if (dataUrl) editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run();
-            };
-            reader.readAsDataURL(file);
+        <FloatingToolbar editor={editor} />
+
+        <style>{`
+          .code-block-lowlight { position: relative; }
+          .code-block-lowlight::before {
+            content: attr(data-language);
+            position: absolute; top: 10px; right: 44px;
+            font-size: 11px; color: var(--text-tertiary);
+            font-family: var(--font-mono, monospace);
+            letter-spacing: 0.5px; pointer-events: none;
+            text-transform: uppercase; opacity: 0.7;
           }
-        }}
-      />
-      {/* AI Copilot 提示条 */}
-      {(copilotSuggestion || copilotLoading) && (
-        <div style={{
-          position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 14px', borderRadius: 20, zIndex: 50,
-          background: 'rgba(20,18,30,0.92)', backdropFilter: 'blur(12px)',
-          border: '0.5px solid rgba(200,169,110,0.3)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          maxWidth: '70%', overflow: 'hidden',
-        }}>
-          {copilotLoading ? (
-            <>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid rgba(200,169,110,0.3)', borderTopColor: '#c8a96e', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: 'rgba(200,169,110,0.6)' }}>AI 正在思考...</span>
-            </>
-          ) : (
-            <>
-              <span style={{ fontSize: 11, color: 'rgba(200,169,110,0.5)', flexShrink: 0 }}>✦</span>
-              <span style={{ fontSize: 12.5, color: 'rgba(200,169,110,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{copilotSuggestion}</span>
-              <kbd style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(200,169,110,0.15)', border: '0.5px solid rgba(200,169,110,0.3)', borderRadius: 4, color: 'rgba(200,169,110,0.7)', flexShrink: 0, fontFamily: 'monospace' }}>Tab</kbd>
-              <button onClick={() => setCopilotSuggestion('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
-            </>
-          )}
-        </div>
-      )}
+          /* 协作光标样式 */
+          .collab-cursor { display: inline; }
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+
+        <EditorContent
+          editor={editor}
+          style={{ flex: 1, overflow: 'auto', height: '100%' }}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDrop={async (e) => {
+            e.preventDefault();
+            if (!editor) return;
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            for (const file of files) {
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                const dataUrl = ev.target?.result as string;
+                if (dataUrl) editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run();
+              };
+              reader.readAsDataURL(file);
+            }
+          }}
+        />
+
+        {/* AI Copilot 提示条 */}
+        {(copilotSuggestion || copilotLoading) && (
+          <div style={{
+            position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 14px', borderRadius: 20, zIndex: 50,
+            background: 'rgba(20,18,30,0.92)', backdropFilter: 'blur(12px)',
+            border: '0.5px solid rgba(200,169,110,0.3)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+            maxWidth: '70%', overflow: 'hidden',
+          }}>
+            {copilotLoading ? (
+              <>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid rgba(200,169,110,0.3)', borderTopColor: '#c8a96e', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: 'rgba(200,169,110,0.6)' }}>AI 正在思考...</span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 11, color: 'rgba(200,169,110,0.5)', flexShrink: 0 }}>✦</span>
+                <span style={{ fontSize: 12.5, color: 'rgba(200,169,110,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{copilotSuggestion}</span>
+                <kbd style={{ fontSize: 10, padding: '1px 5px', background: 'rgba(200,169,110,0.15)', border: '0.5px solid rgba(200,169,110,0.3)', borderRadius: 4, color: 'rgba(200,169,110,0.7)', flexShrink: 0, fontFamily: 'monospace' }}>Tab</kbd>
+                <button onClick={() => setCopilotSuggestion('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 评论面板 */}
