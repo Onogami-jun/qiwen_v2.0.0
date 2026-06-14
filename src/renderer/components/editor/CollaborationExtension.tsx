@@ -10,6 +10,7 @@
  *
  * 使用方式：在 MarkdownEditor.tsx 里替换普通 content 为协作模式
  */
+import React, { useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { supabase } from '../../lib/supabase';
 
@@ -178,7 +179,6 @@ export class SupabaseProvider {
 
 // ── React Hook — 在编辑器里使用协作 ────────────────────────────
 
-import { useEffect, useRef, useState } from 'react';
 
 export interface CollabUser {
   id: string;
@@ -225,7 +225,6 @@ export function useCollaboration(documentId: string | null, enabled: boolean) {
 
 // ── OnlineAvatars — 顶部在线用户头像组件 ────────────────────────
 
-import React from 'react';
 
 export const OnlineAvatars: React.FC<{ users: CollabUser[]; maxShow?: number }> = ({ users, maxShow = 5 }) => {
   if (users.length === 0) return null;
