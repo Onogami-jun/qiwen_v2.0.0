@@ -441,7 +441,7 @@ function updateFtsIndex(documentId, title, htmlContent, tags) {
     if (!row) return;
     const plainText = stripHtmlForFts(htmlContent || '');
     const tagsText = Array.isArray(tags) ? tags.join(' ') : (tags || '');
-    db.prepare('DELETE FROM documents_fts WHERE rowid = ?').run(row.rowid);
+    db.prepare('INSERT INTO documents_fts(documents_fts, rowid, title, content, tags) VALUES(\'delete\', ?, ?, ?, ?)').run(row.rowid, title || '', plainText, tagsText);
     db.prepare('INSERT INTO documents_fts(rowid, title, content, tags) VALUES (?, ?, ?, ?)').run(row.rowid, title || '', plainText, tagsText);
   } catch (err) {
     log.warn('[FTS] updateFtsIndex failed:', err?.message);
@@ -451,7 +451,8 @@ function updateFtsIndex(documentId, title, htmlContent, tags) {
 function rebuildFtsIndex() {
   try {
     log.info('[FTS] Rebuilding full-text index...');
-    db.prepare('DELETE FROM documents_fts').run();
+    // contentless FTS5 表不能直接 DELETE，需要用 fts5 命令
+    db.prepare("INSERT INTO documents_fts(documents_fts) VALUES('delete-all')").run();
     const rows = db.prepare(`
       SELECT d.rowid, d.id, d.title, dc.content,
              GROUP_CONCAT(dt.tag, ' ') as tags_raw
