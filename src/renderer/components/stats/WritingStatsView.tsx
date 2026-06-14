@@ -261,12 +261,12 @@ export const WritingStatsView: React.FC = () => {
         </div>
 
         {/* 番茄钟 top 文档 */}
-        {pomStats && pomStats.byDocument.length > 0 && (
+        {pomStats && (pomStats.byDocument || []).length > 0 && (
           <div style={{ padding: '18px 20px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 14, marginBottom: 24 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 14 }}>专注最多的文档</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pomStats.byDocument.slice(0, 5).map((d, i) => {
-                const pct = d.count / pomStats.byDocument[0].count * 100;
+              {(pomStats.byDocument || []).slice(0, 5).map((d, i) => {
+                const pct = d.count / ((pomStats.byDocument || [])[0]?.count || 1) * 100;
                 return (
                   <div key={d.documentId} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)', width: 16, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
