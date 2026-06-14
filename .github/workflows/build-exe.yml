@@ -32,6 +32,8 @@ jobs:
         run: npm run build:renderer
         env:
           CI: 'false'
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
       - name: 打包 Windows 安装包
         run: npm run build:win -- --publish never
@@ -70,6 +72,8 @@ jobs:
         run: npm run build:renderer
         env:
           CI: 'false'
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
       - name: 打包 macOS DMG（跳过签名）
         run: npm run build:mac -- --publish never
@@ -117,6 +121,8 @@ jobs:
         run: npm run build:renderer
         env:
           CI: 'false'
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
 
       - name: 打包 Linux 安装包
         run: npm run build:linux -- --publish never
