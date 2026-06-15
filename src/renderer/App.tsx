@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { store, persistor } from './store';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from './store';
-import { refreshAccessToken, setLocalMode, clearAuth } from './store/slices/authSlice';
+import { refreshAccessToken, setLocalMode, clearAuth, loginUser, registerUser } from './store/slices/authSlice';
 import { loadSettings } from './store/slices/settingsSlice';
 import { fetchWorkspaces } from './store/slices/workspacesSlice';
 import { fetchDocuments, fetchDocument, createDocument, deleteDocument, updateDocument } from './store/slices/documentsSlice';
@@ -755,7 +755,10 @@ const CloudSyncView: React.FC = React.memo(() => {
   const [showLogin, setShowLogin] = React.useState(false);
   const [loginModalKey, setLoginModalKey] = React.useState(0);
   const [inviteCodeMode, setInviteCodeMode] = React.useState(false);
-
+  // 自动更新
+  const [updateAvailable, setUpdateAvailable] = React.useState(false);
+  const [updateDownloaded, setUpdateDownloaded] = React.useState(false);
+  const [updateDismissed, setUpdateDismissed] = React.useState(false);
   const [inviteCode, setInviteCode] = React.useState('');
   const [inviteLoading, setInviteLoading] = React.useState(false);
   const [inviteError, setInviteError] = React.useState('');
@@ -829,11 +832,18 @@ const CloudSyncView: React.FC = React.memo(() => {
     setLoginLoading(true); setLoginError('');
     try {
       if (isRegMode) {
-        await (cloudSync as any).register(regForm.email, regForm.password, regForm.displayName, regForm.username);
+        const result = await dispatch(registerUser({
+          email: regForm.email,
+          username: regForm.username,
+          password: regForm.password,
+          displayName: regForm.displayName || regForm.username,
+        }));
+        if (registerUser.rejected.match(result)) throw new Error((result.payload as any) || result.error.message);
       } else {
         const emailVal = (csEmailRef.current?.value || '').trim();
         const pwdVal = csPwdRef.current?.value || '';
-        await (cloudSync as any).login(emailVal, pwdVal);
+        const result = await dispatch(loginUser({ emailOrUsername: emailVal, password: pwdVal, rememberMe: true }));
+        if (loginUser.rejected.match(result)) throw new Error((result.payload as any) || result.error.message);
       }
       setShowLogin(false);
       setLoginForm({ email: '', password: '' });
@@ -1349,10 +1359,6 @@ const AppInner: React.FC<{ splashDone?: boolean }> = ({ splashDone }) => {
   }, [_lang]);
   const dispatch = useDispatch<AppDispatch>();
   const { isAuthenticated, isLocalMode } = useSelector((s: RootState) => (s as any).auth);
-  // 自动更新
-  const [updateAvailable, setUpdateAvailable] = React.useState(false);
-  const [updateDownloaded, setUpdateDownloaded] = React.useState(false);
-  const [updateDismissed, setUpdateDismissed] = React.useState(false);
   const { sidebarOpen, notification } = useSelector((s: RootState) => s.app);
   const [stage, setStage] = useState<AppStage>('loading');
   const [bootDone, setBootDone] = useState(false);
