@@ -6,6 +6,7 @@ import { AppSettings } from '../../../shared/types';
 import { ipc } from '../../utils/ipc';
 import { LicenseView } from './LicenseView';
 import { UserProfileView } from './UserProfileView';
+import { OnboardingPage } from '../onboarding/OnboardingPage';
 
 type SettingSection = 'appearance' | 'editor' | 'ai' | 'shortcuts' | 'data' | 'about' | 'license' | 'profile';
 
