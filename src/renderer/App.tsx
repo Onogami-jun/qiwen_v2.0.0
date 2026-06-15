@@ -754,6 +754,11 @@ const CloudSyncView: React.FC = React.memo(() => {
   const [syncItems, setSyncItems] = React.useState({ documents: true, references: true, settings: true, workspaces: true });
   const [showLogin, setShowLogin] = React.useState(false);
   const [loginModalKey, setLoginModalKey] = React.useState(0);
+  const [inviteCodeMode, setInviteCodeMode] = React.useState(false);
+  const [inviteCode, setInviteCode] = React.useState('');
+  const [inviteLoading, setInviteLoading] = React.useState(false);
+  const [inviteError, setInviteError] = React.useState('');
+  const [inviteSuccess, setInviteSuccess] = React.useState('');
   const [loginForm, setLoginForm] = React.useState({ email: '', password: '' });
   const csEmailRef = React.useRef<HTMLInputElement>(null);
   const csPwdRef = React.useRef<HTMLInputElement>(null);
@@ -875,6 +880,24 @@ const CloudSyncView: React.FC = React.memo(() => {
     } catch (e: any) {
       setForgotError(e.message || '重置失败，请重试');
     } finally { setForgotLoading(false); }
+  };
+
+  const handleAcceptInvite = async () => {
+    if (!inviteCode.trim()) return;
+    setInviteLoading(true); setInviteError(''); setInviteSuccess('');
+    try {
+      await (cloudSync as any).acceptInvitation(inviteCode.trim());
+      setInviteSuccess('✅ 已成功加入组织！同步后可在工作区列表看到共享工作区。');
+      setInviteCode('');
+      setTimeout(() => { setInviteCodeMode(false); setInviteSuccess(''); closeLoginModal(); }, 2500);
+    } catch (e: any) {
+      const errMap: Record<string, string> = {
+        invitation_not_found: '邀请码无效或已过期',
+        invitation_already_used: '该邀请码已被使用',
+        invitation_expired: '邀请码已过期（有效期7天）',
+      };
+      setInviteError(errMap[e?.message] || `加入失败：${e?.message}`);
+    } finally { setInviteLoading(false); }
   };
 
   const closeLoginModal = () => {
@@ -1023,7 +1046,7 @@ const CloudSyncView: React.FC = React.memo(() => {
             {/* 弹窗头部 */}
             <div style={{ padding:'22px 24px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <div style={{ fontSize:16, fontWeight:600, color:'var(--text-primary)' }}>
-                {forgotMode ? '重置密码' : isRegMode ? '注册云账号' : '登录云账号'}
+                {inviteCodeMode ? '输入邀请码' : forgotMode ? '重置密码' : isRegMode ? '注册云账号' : '登录云账号'}
               </div>
               <button onClick={closeLoginModal} style={{
                 width:28, height:28, borderRadius:8, border:'none', cursor:'pointer',
@@ -1032,7 +1055,7 @@ const CloudSyncView: React.FC = React.memo(() => {
               }}>×</button>
             </div>
             <div style={{ fontSize:12.5, color:'var(--text-tertiary)', padding:'4px 24px 20px' }}>
-              {forgotMode ? '输入注册邮箱，我们将发送重置链接' : isRegMode ? '创建账号开启多设备同步' : '登录后开启多设备同步'}
+              {inviteCodeMode ? '输入邀请码加入团队' : forgotMode ? '输入注册邮箱，我们将发送重置链接' : isRegMode ? '创建账号开启多设备同步' : '登录后开启多设备同步'}
             </div>
 
             <div style={{ padding:'0 24px 24px' }}>
@@ -1172,8 +1195,50 @@ const CloudSyncView: React.FC = React.memo(() => {
                 </div>
               )}
 
+              {/* ── 邀请码模式 ── */}
+              {inviteCodeMode && !forgotMode && (
+                <div>
+                  <div style={{ fontSize:13, color:'var(--text-secondary)', marginBottom:16, lineHeight:1.6, background:'rgba(91,156,246,0.06)', border:'0.5px solid rgba(91,156,246,0.25)', borderRadius:9, padding:'10px 13px' }}>
+                    收到启文团队邀请？在下方输入邀请码，加入后即可访问共享工作区。
+                  </div>
+                  <div style={{ fontSize:12.5, color:'var(--text-secondary)', marginBottom:6 }}>邀请码</div>
+                  <input
+                    value={inviteCode}
+                    onChange={e => setInviteCode(e.target.value)}
+                    onKeyDown={e => e.key==='Enter' && handleAcceptInvite()}
+                    placeholder="粘贴邀请链接中的邀请码"
+                    autoFocus
+                    style={{ width:'100%', padding:'10px 12px', borderRadius:9, border:'0.5px solid var(--border-md)', background:'var(--bg-surface3)', color:'var(--text-primary)', fontSize:13, fontFamily:'monospace', outline:'none', marginBottom:14, boxSizing:'border-box' as const }}
+                  />
+                  {inviteError && (
+                    <div style={{ fontSize:13, color:'#ff6b6b', background:'rgba(255,107,107,.08)', border:'0.5px solid rgba(255,107,107,.25)', borderRadius:9, padding:'9px 13px', marginBottom:12 }}>
+                      ⚠ {inviteError}
+                    </div>
+                  )}
+                  {inviteSuccess && (
+                    <div style={{ fontSize:13, color:'#52c97a', background:'rgba(82,201,122,.08)', border:'0.5px solid rgba(82,201,122,.25)', borderRadius:9, padding:'9px 13px', marginBottom:12 }}>
+                      {inviteSuccess}
+                    </div>
+                  )}
+                  <button onClick={handleAcceptInvite} disabled={inviteLoading || !inviteCode.trim()} style={{
+                    width:'100%', padding:'11px', borderRadius:10, border:'none',
+                    background:'linear-gradient(135deg,#c8a96e,#9a7040)', color:'#fff',
+                    fontSize:14, fontWeight:600, cursor: inviteLoading || !inviteCode.trim() ? 'not-allowed' : 'pointer',
+                    opacity: inviteLoading || !inviteCode.trim() ? .7 : 1, fontFamily:'inherit', marginBottom:12,
+                  }}>
+                    {inviteLoading ? '加入中...' : '加入团队'}
+                  </button>
+                  <div style={{ textAlign:'center' as const }}>
+                    <button onClick={() => { setInviteCodeMode(false); setInviteError(''); setInviteCode(''); }}
+                      style={{ border:'none', background:'none', cursor:'pointer', color:'var(--text-tertiary)', fontSize:12.5, fontFamily:'inherit' }}>
+                      ← 返回登录
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ── 登录/注册表单 ── */}
-              {!forgotMode && (
+              {!forgotMode && !inviteCodeMode && (
                 <>
                   {isRegMode && (
                     <>
@@ -1220,6 +1285,12 @@ const CloudSyncView: React.FC = React.memo(() => {
                     <button onClick={() => { setIsRegMode(v=>!v); setLoginError(''); }}
                       style={{ background:'none', border:'none', cursor:'pointer', color:'var(--accent)', fontSize:12.5, fontFamily:'inherit', padding:'0 4px' }}>
                       {isRegMode ? '去登录' : '立即注册'}
+                    </button>
+                  </div>
+                  <div style={{ textAlign:'center' as const, marginTop:12, paddingTop:12, borderTop:'0.5px solid var(--border)' }}>
+                    <button onClick={() => { setInviteCodeMode(true); setLoginError(''); setForgotMode(false); }}
+                      style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-tertiary)', fontSize:12, fontFamily:'inherit' }}>
+                      🔗 有邀请码？点击加入团队
                     </button>
                   </div>
                 </>
