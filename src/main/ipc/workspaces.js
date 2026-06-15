@@ -43,6 +43,19 @@ function registerWorkspaceHandlers() {
     return { success: true };
   });
 
+  // ── 组织工作区 ──────────────────────────────────────────────
+  ipcMain.handle('workspaces:list-by-org', (_, { orgId }) => {
+    return getDb().prepare('SELECT * FROM workspaces WHERE org_id = ? ORDER BY created_at ASC').all(orgId);
+  });
+
+  ipcMain.handle('workspaces:set-org', (_, { id, orgId, ownerId, isShared }) => {
+    getDb().prepare(`
+      UPDATE workspaces SET org_id = ?, owner_id = ?, is_shared = ?, updated_at = ?
+      WHERE id = ?
+    `).run(orgId || null, ownerId || null, isShared ? 1 : 0, Date.now(), id);
+    return { success: true };
+  });
+
   ipcMain.handle('workspaces:upsert', (_, ws) => {
     const now = ws.updatedAt ? new Date(ws.updatedAt).getTime() : Date.now();
     const created = ws.createdAt ? new Date(ws.createdAt).getTime() : now;

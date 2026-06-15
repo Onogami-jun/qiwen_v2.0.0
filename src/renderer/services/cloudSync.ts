@@ -215,6 +215,52 @@ async function updateMemberRole(organizationId: string, userId: string, role: st
 
 // ── 文档云同步 ──────────────────────────────────────────────────
 
+// ── 组织工作区 ────────────────────────────────────────────────
+
+async function createOrgWorkspace(orgId: string, name: string, icon = '🏢', color = '#5b9cf6'): Promise<any> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('未登录');
+  const { data, error } = await supabase.from('workspaces').insert({
+    name, icon, color,
+    org_id: orgId,
+    owner_id: user.id,
+    is_shared: true,
+    profession: 'general',
+  }).select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function getOrgWorkspaces(orgId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('is_shared', true)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+async function shareWorkspaceToOrg(workspaceId: string, orgId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('未登录');
+  const { error } = await supabase.from('workspaces').update({
+    org_id: orgId,
+    owner_id: user.id,
+    is_shared: true,
+  }).eq('id', workspaceId);
+  if (error) throw new Error(error.message);
+}
+
+async function unshareWorkspace(workspaceId: string): Promise<void> {
+  const { error } = await supabase.from('workspaces').update({
+    org_id: null,
+    is_shared: false,
+  }).eq('id', workspaceId);
+  if (error) throw new Error(error.message);
+}
+
 async function listDocuments(workspaceId: string, parentId?: string): Promise<CloudDocument[]> {
   let q = supabase.from('documents').select('*').eq('workspace_id', workspaceId).eq('is_archived', false);
   if (parentId) q = q.eq('parent_id', parentId);
@@ -479,6 +525,10 @@ export const cloudSync = {
   // 代码批注
   getCodeAnnotations,
   addCodeAnnotation,
+  createOrgWorkspace,
+  getOrgWorkspaces,
+  shareWorkspaceToOrg,
+  unshareWorkspace,
   replyCodeAnnotation,
 
   // 实时

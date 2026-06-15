@@ -127,21 +127,41 @@ async function fullSync() {
   syncInProgress = true; notifyStatus();
 
   try {
-    // 拉取云端工作区
-    const { data: cloudWs } = await supabase
+    // 拉取云端工作区（自己的 + 所在组织的共享工作区）
+    const { data: myOrgs } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', user.id);
+
+    const orgIds = (myOrgs || []).map((m: any) => m.organization_id);
+
+    // 拉取自己创建的工作区
+    const { data: myWs } = await supabase
       .from('workspaces')
       .select('*')
+      .eq('owner_id', user.id)
       .order('updated_at', { ascending: false });
 
-    if (cloudWs) {
-      for (const ws of cloudWs) {
-        await ipc.invoke('workspaces:upsert', {
-          id: ws.id, name: ws.name, description: ws.description,
-          icon: ws.icon, color: ws.color, profession: ws.profession || 'general',
-          createdAt: new Date(ws.created_at).getTime(),
-          updatedAt: new Date(ws.updated_at).getTime(),
-        });
-      }
+    // 拉取所在组织的共享工作区
+    const { data: orgWs } = orgIds.length > 0
+      ? await supabase.from('workspaces').select('*').in('org_id', orgIds).eq('is_shared', true)
+      : { data: [] };
+
+    const allWs = [...(myWs || []), ...(orgWs || [])];
+    const seenWs = new Set<string>();
+
+    for (const ws of allWs) {
+      if (seenWs.has(ws.id)) continue;
+      seenWs.add(ws.id);
+      await ipc.invoke('workspaces:upsert', {
+        id: ws.id, name: ws.name, description: ws.description,
+        icon: ws.icon, color: ws.color, profession: ws.profession || 'general',
+        orgId: ws.org_id || null,
+        ownerId: ws.owner_id || null,
+        isShared: ws.is_shared || false,
+        createdAt: new Date(ws.created_at).getTime(),
+        updatedAt: new Date(ws.updated_at).getTime(),
+      });
     }
 
     // 拉取云端文档列表（不含内容，按需加载）

@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS workspaces (
   icon        TEXT DEFAULT '📁',
   color       TEXT DEFAULT '#c8a96e',
   profession  TEXT DEFAULT 'general',
+  org_id      TEXT DEFAULT NULL,
+  owner_id    TEXT DEFAULT NULL,
+  is_shared   INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -57,6 +60,7 @@ CREATE TABLE IF NOT EXISTS documents (
   content_type TEXT NOT NULL DEFAULT 'markdown',
   parent_id    TEXT,
   workspace_id TEXT NOT NULL,
+  org_id       TEXT DEFAULT NULL,
   is_folder    INTEGER NOT NULL DEFAULT 0,
   is_favorite  INTEGER NOT NULL DEFAULT 0,
   is_pinned    INTEGER NOT NULL DEFAULT 0,
@@ -318,6 +322,13 @@ const MIGRATIONS = [
     id TEXT PRIMARY KEY, event TEXT NOT NULL, payload TEXT, created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_usage_events ON usage_events(event, created_at DESC);`,
+  // v7: 组织协作 — workspaces 加 org_id/owner_id/is_shared，documents 加 org_id
+  `ALTER TABLE workspaces ADD COLUMN org_id TEXT DEFAULT NULL;
+   ALTER TABLE workspaces ADD COLUMN owner_id TEXT DEFAULT NULL;
+   ALTER TABLE workspaces ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE documents ADD COLUMN org_id TEXT DEFAULT NULL;
+   CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(org_id);
+   CREATE INDEX IF NOT EXISTS idx_documents_org ON documents(org_id);`,
 ];
 
 // ── 初始化 ────────────────────────────────────────────────────
