@@ -16,15 +16,18 @@ import { setView, openTab } from '../../store/slices/appSlice';
 // 主题系统
 // ─────────────────────────────────────────────────────────────
 const THEMES = {
-  dark:    { bg: '#0d1117', surface: '#161b22', accent: '#c8a96e', text: '#e6edf3', sub: '#8b949e', border: 'rgba(255,255,255,0.1)',   card: '#1c2128' },
-  light:   { bg: '#ffffff', surface: '#f6f8fa', accent: '#0969da', text: '#24292f', sub: '#57606a', border: 'rgba(0,0,0,0.12)',       card: '#f0f2f5' },
-  minimal: { bg: '#fafaf8', surface: '#f0efea', accent: '#3d3d3d', text: '#1a1a1a', sub: '#666666', border: 'rgba(0,0,0,0.08)',       card: '#f0efea' },
+  dark:      { bg: '#0d1117', surface: '#161b22', accent: '#c8a96e', text: '#e6edf3', sub: '#8b949e', border: 'rgba(255,255,255,0.1)',  card: '#1c2128' },
+  light:     { bg: '#ffffff', surface: '#f6f8fa', accent: '#0969da', text: '#24292f', sub: '#57606a', border: 'rgba(0,0,0,0.12)',      card: '#f0f2f5' },
+  minimal:   { bg: '#fafaf8', surface: '#f0efea', accent: '#3d3d3d', text: '#1a1a1a', sub: '#666666', border: 'rgba(0,0,0,0.08)',      card: '#f0efea' },
+  corporate: { bg: '#1a2035', surface: '#222d45', accent: '#4488ff', text: '#e8eaf0', sub: '#8892a4', border: 'rgba(255,255,255,0.1)', card: '#2a3550' },
+  nature:    { bg: '#1a2d1a', surface: '#223322', accent: '#52c97a', text: '#e0f0e0', sub: '#7a9e7a', border: 'rgba(255,255,255,0.1)', card: '#2a3f2a' },
+  rose:      { bg: '#2a1520', surface: '#3d1f2a', accent: '#e87abf', text: '#f0e0e8', sub: '#a87890', border: 'rgba(255,255,255,0.1)', card: '#4a2535' },
   vibrant: { bg: '#1a0533', surface: '#2d1055', accent: '#a78bfa', text: '#f5f3ff', sub: '#c4b5fd', border: 'rgba(167,139,250,0.25)', card: '#2d1055' },
   ocean:   { bg: '#0a1628', surface: '#112240', accent: '#64ffda', text: '#ccd6f6', sub: '#8892b0', border: 'rgba(100,255,218,0.15)', card: '#112240' },
   sunset:  { bg: '#1a0a00', surface: '#2d1500', accent: '#ff6b35', text: '#ffecd2', sub: '#c9a882', border: 'rgba(255,107,53,0.2)',   card: '#2d1500' },
 } as const;
 type ThemeKey = keyof typeof THEMES;
-const THEME_LABELS: Record<ThemeKey, string> = { dark:'暗黑', light:'明亮', minimal:'极简', vibrant:'活力', ocean:'海洋', sunset:'暮色' };
+const THEME_LABELS: Record<ThemeKey, string> = { dark:'暗黑', light:'明亮', minimal:'极简', corporate:'商务', nature:'自然', rose:'玫瑰' };
 
 const LAYOUTS: { id: SlideLayout; label: string; icon: React.ReactNode }[] = [
   { id:'title',   label:'标题页', icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="8" width="18" height="4" rx="1"/><rect x="7" y="14" width="10" height="2" rx="1" opacity=".4"/></svg> },
@@ -514,13 +517,25 @@ const FullscreenPresenter: React.FC<{
   pres: Presentation; startIndex: number; theme: ThemeKey; onExit: () => void;
 }> = ({ pres, startIndex, theme, onExit }) => {
   const [cur, setCur] = useState(startIndex);
+  const [direction, setDirection] = useState<'next'|'prev'>('next');
+  const [animating, setAnimating] = useState(false);
   const total = pres.slides.length;
+
+  const goTo = (idx: number, dir: 'next'|'prev') => {
+    if (idx < 0 || idx >= total || animating) return;
+    setDirection(dir);
+    setAnimating(true);
+    setTimeout(() => { setCur(idx); setAnimating(false); }, 280);
+  };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key==='ArrowRight'||e.key===' '||e.key==='ArrowDown') { e.preventDefault(); setCur(c=>Math.min(total-1,c+1)); }
       if (e.key==='ArrowLeft'||e.key==='ArrowUp') { e.preventDefault(); setCur(c=>Math.max(0,c-1)); }
       if (e.key==='Escape') onExit();
+      if (e.key==='Home') { e.preventDefault(); setCur(0); }
+      if (e.key==='End') { e.preventDefault(); setCur(total-1); }
+      if (e.key==='f'||e.key==='F') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -530,11 +545,24 @@ const FullscreenPresenter: React.FC<{
     <div style={{ position:'fixed', inset:0, background:'#000', zIndex:9999, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}
       onClick={() => setCur(c=>c<total-1?c+1:c)}>
       <div style={{ width:'90vw', maxWidth:'calc(90vh * 16 / 9)', aspectRatio:'16/9', position:'relative', borderRadius:4, overflow:'hidden', boxShadow:'0 40px 100px rgba(0,0,0,0.8)' }}>
-        <SlideRenderer slide={pres.slides[cur]} theme={theme} scale={window.innerWidth*0.9/800} />
+        {/* 左右导航按钮 */}
+        {cur > 0 && (
+          <button onClick={() => goTo(cur-1,'prev')} style={{ position:'absolute', left:20, top:'50%', transform:'translateY(-50%)', zIndex:10, width:44, height:44, borderRadius:'50%', background:'rgba(255,255,255,0.12)', border:'none', cursor:'pointer', color:'#fff', fontSize:20, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', transition:'background 0.15s' }}
+            onMouseOver={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.22)'}
+            onMouseOut={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.12)'}>‹</button>
+        )}
+        {cur < total-1 && (
+          <button onClick={() => goTo(cur+1,'next')} style={{ position:'absolute', right:20, top:'50%', transform:'translateY(-50%)', zIndex:10, width:44, height:44, borderRadius:'50%', background:'rgba(255,255,255,0.12)', border:'none', cursor:'pointer', color:'#fff', fontSize:20, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', transition:'background 0.15s' }}
+            onMouseOver={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.22)'}
+            onMouseOut={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.12)'}>›</button>
+        )}
+        <div style={{ opacity: animating ? 0 : 1, transition:'opacity 0.25s', width:'100%', display:'flex', justifyContent:'center' }}>
+          <SlideRenderer slide={pres.slides[cur]} theme={theme} scale={window.innerWidth*0.9/800} />
+        </div>
       </div>
       {/* 进度条 */}
       <div style={{ position:'fixed', bottom:0, left:0, right:0, height:3, background:'rgba(255,255,255,0.08)' }}>
-        <div style={{ height:'100%', background:THEMES[theme].accent, width:`${((cur+1)/total)*100}%`, transition:'width 0.35s' }} />
+        <div style={{ height:'100%', background:THEMES[theme].accent, width:`${((cur+1)/total)*100}%`, transition:'width 0.4s cubic-bezier(0.22,1,0.36,1)', boxShadow:`0 0 8px ${THEMES[theme].accent}80` }} />
       </div>
       {/* 控制条 */}
       <div style={{ position:'fixed', bottom:18, display:'flex', alignItems:'center', gap:12, background:'rgba(0,0,0,0.8)', padding:'7px 20px', borderRadius:24, backdropFilter:'blur(12px)', border:'0.5px solid rgba(255,255,255,0.1)' }}
@@ -545,7 +573,13 @@ const FullscreenPresenter: React.FC<{
         <div style={{ width:1, height:14, background:'rgba(255,255,255,0.15)' }} />
         <button onClick={onExit} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:11 }}>ESC 退出</button>
       </div>
-      <div style={{ position:'fixed', top:18, right:22, fontSize:11, color:'rgba(255,255,255,0.22)', pointerEvents:'none' }}>← → 切换 · 点击下一张</div>
+      <div style={{ position:'fixed', top:18, left:22, fontSize:11, color:'rgba(255,255,255,0.3)', background:'rgba(0,0,0,0.5)', padding:'4px 10px', borderRadius:6, backdropFilter:'blur(4px)' }}>
+        {cur===0 && <span style={{color:'rgba(255,255,255,0.5)'}}>首张幻灯片</span>}
+        {cur===total-1 && <span style={{color:'rgba(255,255,255,0.5)'}}>最后一张</span>}
+      </div>
+      <div style={{ position:'fixed', top:18, right:22, fontSize:11, color:'rgba(255,255,255,0.3)', background:'rgba(0,0,0,0.5)', padding:'4px 10px', borderRadius:6, backdropFilter:'blur(4px)' }}>
+        ← → 切换 &nbsp;·&nbsp; Home/End 首尾 &nbsp;·&nbsp; F 全屏
+      </div>
     </div>
   );
 };
@@ -730,6 +764,8 @@ const PresentationEditor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       if ((e.metaKey||e.ctrlKey)&&e.key==='Enter') { e.preventDefault(); setIsFullscreen(true); }
       if ((e.metaKey||e.ctrlKey)&&e.key==='z'&&!e.shiftKey) { e.preventDefault(); /* undo handled in reducer */ }
       if (e.key==='ArrowDown'||e.key==='ArrowRight') { e.preventDefault(); if (pres&&activeSlideIndex<pres.slides.length-1) dispatch(setActiveSlideIndex(activeSlideIndex+1)); }
+      if (e.key==='ArrowUp'&&e.shiftKey&&e.ctrlKey) { e.preventDefault(); if (pres&&activeSlideIndex>0) { const s=[...pres.slides]; const t=s[activeSlideIndex]; s.splice(activeSlideIndex,1); s.splice(activeSlideIndex-1,0,t); dispatch(saveAllSlides({presentationId:pres.id,slides:s.map((sl,i)=>({...sl,sortOrder:i}))})); dispatch(setActiveSlideIndex(activeSlideIndex-1)); } }
+      if (e.key==='ArrowDown'&&e.shiftKey&&e.ctrlKey) { e.preventDefault(); if (pres&&activeSlideIndex<pres.slides.length-1) { const s=[...pres.slides]; const t=s[activeSlideIndex]; s.splice(activeSlideIndex,1); s.splice(activeSlideIndex+1,0,t); dispatch(saveAllSlides({presentationId:pres.id,slides:s.map((sl,i)=>({...sl,sortOrder:i}))})); dispatch(setActiveSlideIndex(activeSlideIndex+1)); } }
       if (e.key==='ArrowUp'||e.key==='ArrowLeft') { e.preventDefault(); if (activeSlideIndex>0) dispatch(setActiveSlideIndex(activeSlideIndex-1)); }
       if ((e.key==='Delete'||e.key==='Backspace')&&e.shiftKey) { e.preventDefault(); if (pres&&pres.slides.length>1) { dispatch(deleteSlideLocal(activeSlideIndex)); scheduleAutoSave(); } }
     };
@@ -992,9 +1028,46 @@ const PresentationEditor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </Btn>
 
           {/* 导出 PDF */}
-          <Btn onClick={handleExportPdf} disabled={exportingPdf} title="导出为 PDF">
+          <Btn onClick={handleExportPdf} disabled={exportingPdf} title="导出为 PDF（打印）">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            {exportingPdf ? '生成中...' : 'PDF'}
+            {exportingPdf ? '生成中...' : '导出 PDF'}
+          </Btn>
+
+          {/* 导出 HTML（可在浏览器中演示）*/}
+          <Btn onClick={() => {
+            if (!pres) return;
+            const t = THEMES[theme] || THEMES.dark;
+            const slides = pres.slides || [];
+            let slidesHtml = '';
+            slides.forEach((s, i) => {
+              const c = s.content || {};
+              let body = '';
+              if (s.layout === 'title') {
+                body = `<h1 style="font-size:3.8vw;font-weight:300;letter-spacing:-0.03em;color:${t.text};margin-bottom:1.5vw">${c.title||''}</h1><div style="width:4vw;height:4px;background:${t.accent};border-radius:2px;margin-bottom:1.5vw"></div><h2 style="font-size:1.8vw;font-weight:300;color:${t.sub}">${c.subtitle||''}</h2>`;
+              } else if (s.layout === 'section') {
+                body = `<div style="font-size:1vw;letter-spacing:0.2em;text-transform:uppercase;color:${t.accent};margin-bottom:1.5vw">${c.sectionLabel||'SECTION'}</div><h1 style="font-size:3vw;font-weight:300;color:${t.text}">${c.title||''}</h1>`;
+              } else if (s.layout === 'two-col') {
+                body = `<h2 style="font-size:2.4vw;font-weight:400;color:${t.text};margin-bottom:2vw;width:100%;text-align:left">${c.title||''}</h2><div style="display:grid;grid-template-columns:1fr 1fr;gap:3vw;width:100%;text-align:left"><div style="color:${t.sub};font-size:1.4vw;line-height:1.8;white-space:pre-wrap">${c.leftBody||''}</div><div style="color:${t.sub};font-size:1.4vw;line-height:1.8;white-space:pre-wrap">${c.rightBody||''}</div></div>`;
+              } else {
+                const lines = (c.body||'').split('\n').filter(Boolean);
+                const bodyContent = lines.some((l: string) => l.startsWith('• '))
+                  ? '<ul style="padding-left:2vw">'+lines.map((l: string) => `<li style="font-size:1.5vw;line-height:2;color:${t.sub};margin-bottom:0.3vw">${l.replace(/^•\s*/,'')}</li>`).join('')+'</ul>'
+                  : `<p style="font-size:1.5vw;line-height:1.85;color:${t.sub};white-space:pre-wrap">${c.body||''}</p>`;
+                body = `<h2 style="font-size:2.4vw;font-weight:400;color:${t.text};margin-bottom:1vw;width:100%;text-align:left">${c.title||''}</h2><div style="width:3vw;height:3px;background:${t.accent};border-radius:2px;margin-bottom:1.5vw;align-self:flex-start"></div>${bodyContent}`;
+              }
+              slidesHtml += `<div class="slide${i===0?' active':''}">${body}</div>`;
+            });
+            const fullHtml = \`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>${pres.title||'演示'}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:${t.bg};font-family:'PingFang SC','Helvetica Neue',sans-serif;overflow:hidden;user-select:none}.slide{position:fixed;inset:0;display:none;padding:7% 9%;align-items:center;justify-content:center;flex-direction:column;background:${t.bg};color:${t.text};opacity:0;transition:opacity .3s}.slide.active{display:flex;opacity:1}.progress{position:fixed;bottom:0;left:0;height:3px;background:${t.accent};transition:width .4s}.page-num{position:fixed;bottom:16px;right:20px;font-size:.8vw;opacity:.3;color:${t.text};font-family:monospace}.hint{position:fixed;top:14px;right:18px;font-size:.7vw;opacity:.2;color:${t.text}}.dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.2);cursor:pointer;transition:all .2s}.dot.active{background:${t.accent};transform:scale(1.4)}.dots{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:6px}.nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.1);border:none;border-radius:50%;width:42px;height:42px;cursor:pointer;font-size:18px;color:#fff;opacity:0;transition:opacity .2s}.nav:hover{background:rgba(255,255,255,.2)}body:hover .nav{opacity:1}.prev{left:14px}.next{right:14px}</style></head><body>\${slidesHtml}<div class="progress" id="p"></div><div class="page-num" id="pn"></div><div class="hint">← → 切换 · F 全屏 · Esc 退出</div><button class="nav prev" onclick="go(cur-1)">‹</button><button class="nav next" onclick="go(cur+1)">›</button><div class="dots" id="d"></div><script>let cur=0;const s=document.querySelectorAll('.slide'),n=s.length;const d=document.getElementById('d');for(let i=0;i<Math.min(n,15);i++){const el=document.createElement('div');el.className='dot';el.onclick=(i=>(()=>go(i)))(i);d.appendChild(el);}function go(i){if(i<0||i>=n)return;s[cur].style.display='none';cur=i;s[cur].style.display='flex';setTimeout(()=>s[cur].style.opacity='1',10);document.getElementById('p').style.width=((cur+1)/n*100)+'%';document.getElementById('pn').textContent=(cur+1)+' / '+n;document.querySelectorAll('.dot').forEach((el,j)=>el.classList.toggle('active',j===cur));}go(0);document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key===' ')go(cur+1);if(e.key==='ArrowLeft')go(cur-1);if(e.key==='Home')go(0);if(e.key==='End')go(n-1);if(e.key==='f')document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();if(e.key==='Escape'&&document.fullscreenElement)document.exitFullscreen();});<\/script></body></html>\`;
+            const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = \`\${pres.title||'演示文稿'}.html\`;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }} title="导出为独立 HTML（浏览器可直接演示）">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            导出 HTML
           </Btn>
 
           {/* 图片上传 */}

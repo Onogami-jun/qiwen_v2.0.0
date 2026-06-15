@@ -200,9 +200,14 @@ export const LicenseView: React.FC = () => {
                 ))}
               </div>
               {p.cta && !isCur ? (
-                <a href={p.cta} target="_blank" rel="noreferrer" style={{ display: 'block', textAlign: 'center', padding: '9px', borderRadius: 9, textDecoration: 'none', fontSize: 13, fontWeight: 600, background: p.id === 'pro' ? 'linear-gradient(135deg,#c8a96e,#9a7040)' : 'transparent', color: p.id === 'pro' ? '#fff' : p.color, border: p.id === 'pro' ? 'none' : `1px solid ${p.color}50` }}>
+                <button onClick={() => {
+                  const url = p.cta!;
+                  const api = (window as any).electronAPI;
+                  if (api?.invoke) { api.invoke('shell:open-external', { url }).catch(() => window.open(url,'_blank')); }
+                  else { window.open(url, '_blank'); }
+                }} style={{ width:'100%', textAlign:'center', padding:'9px', borderRadius:9, border: p.id==='pro' ? 'none' : `1px solid ${p.color}50`, fontSize:13, fontWeight:600, background: p.id==='pro' ? 'linear-gradient(135deg,#c8a96e,#9a7040)' : 'transparent', color: p.id==='pro' ? '#fff' : p.color, cursor:'pointer', fontFamily:'inherit' }}>
                   {p.id === 'pro' ? '立即升级' : '联系销售'}
-                </a>
+                </button>
               ) : isCur ? (
                 <div style={{ textAlign: 'center', padding: '9px', borderRadius: 9, fontSize: 13, color: 'var(--text-tertiary)', background: 'var(--bg-surface3)', border: '1px solid var(--border)' }}>当前计划</div>
               ) : (
