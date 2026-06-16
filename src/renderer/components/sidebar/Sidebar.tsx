@@ -433,16 +433,21 @@ export const Sidebar: React.FC = () => {
             {wsTab === 'team' && isLoggedIn ? (
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
                 {allWorkspaces.filter((w: any) => w.isShared || w.is_shared || w.org_id || w.orgId).length === 0 ? (
-                  <div style={{ padding: '24px 12px', textAlign: 'center' as const }}>
-                    <div style={{ fontSize: 28, marginBottom: 10 }}>👥</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.7, marginBottom: 14 }}>
+                  <div style={{ padding: '12px 8px', textAlign: 'center' as const }}>
+                    <div style={{ fontSize: 20, marginBottom: 6 }}>👥</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.7, marginBottom: 10 }}>
                       还没有团队工作区<br />邀请队友一起协作
                     </div>
                     <button onClick={() => (dispatch as any)(setView('org'))} style={{
                       width: '100%', padding: '7px', borderRadius: 8, border: '1px solid rgba(200,169,110,0.3)',
                       background: 'rgba(200,169,110,0.07)', color: 'var(--accent)',
-                      cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
+                      cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', marginBottom: 8,
                     }}>+ 创建团队工作区</button>
+                    <div style={{ fontSize: 9.5, color: 'var(--text-tertiary)', textAlign: 'left' as const, background: 'var(--bg-surface3)', borderRadius: 6, padding: '6px 8px' }}>
+                      本地共 {allWorkspaces.length} 个工作区<br/>
+                      共享: {allWorkspaces.filter((w:any)=>w.isShared||w.is_shared).length}<br/>
+                      有org: {allWorkspaces.filter((w:any)=>w.org_id||w.orgId).length}
+                    </div>
                   </div>
                 ) : (
                   allWorkspaces.filter((w: any) => w.isShared || w.org_id).map((ws: any) => (
