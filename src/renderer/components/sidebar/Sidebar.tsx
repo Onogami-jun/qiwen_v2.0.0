@@ -242,7 +242,7 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   const [allTreeDocs, setAllTreeDocs] = useState<any[]>([]);
   const [folderInputting, setFolderInputting] = useState(false);
   const [folderName, setFolderName] = useState('');
-  const [folderParentId, setFolderParentId] = useState<string | null>(null);
+  const [folderParentId, setFolderParentId] = useState<string | undefined>(undefined);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: any } | null>(null);
   const [inlineInput, setInlineInput] = useState<{ parentId: string | null; type: 'doc' | 'folder' } | null>(null);
   const [inlineName, setInlineName] = useState('');
@@ -264,8 +264,8 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   };
   const confirmNewFolder = async () => {
     if (!activeWsId || !folderName.trim()) { setFolderInputting(false); return; }
-    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: folderName.trim(), isFolder: true, parentId: folderParentId }));
-    setFolderInputting(false); setFolderName(''); setFolderParentId(null);
+    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: folderName.trim(), isFolder: true, parentId: folderParentId || undefined }));
+    setFolderInputting(false); setFolderName(''); setFolderParentId(undefined);
     refreshTree();
   };
   const confirmInline = async () => {
@@ -274,7 +274,7 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
       workspaceId: activeWsId,
       title: inlineName.trim(),
       isFolder: inlineInput.type === 'folder',
-      parentId: inlineInput.parentId,
+      parentId: inlineInput.parentId || undefined,
     }));
     setInlineInput(null); setInlineName('');
     refreshTree();
