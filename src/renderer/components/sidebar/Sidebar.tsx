@@ -253,7 +253,7 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   };
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderBottom: '0.5px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px', borderBottom: '0.5px solid var(--border)', gap: 2 }}>
         <button onClick={() => setShowTree(false)}
           style={{ flex: 1, padding: '4px 0', borderRadius: 5, border: 'none', background: !showTree ? 'var(--bg-surface3)' : 'transparent', color: !showTree ? 'var(--text-primary)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
           最近
@@ -262,7 +262,16 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
           style={{ flex: 1, padding: '4px 0', borderRadius: 5, border: 'none', background: showTree ? 'var(--bg-surface3)' : 'transparent', color: showTree ? 'var(--text-primary)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
           文件树
         </button>
-        <button onClick={onNew} title="新建" style={{ width: 22, height: 22, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+        <button onClick={onNew} title="新建文档 (Ctrl+N)" style={{ width: 22, height: 22, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onMouseOver={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
+          onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-tertiary)'; }}>
+          📄
+        </button>
+        <button onClick={handleNewFolder} title="新建文件夹" style={{ width: 22, height: 22, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onMouseOver={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
+          onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-tertiary)'; }}>
+          📁
+        </button>
       </div>
       {showTree
         ? <DocTree docs={allTreeDocs.length > 0 ? allTreeDocs : allDocs} onOpen={onOpen} onNew={onNew} onNewFolder={handleNewFolder} />
