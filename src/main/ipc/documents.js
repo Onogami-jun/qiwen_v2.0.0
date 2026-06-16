@@ -12,7 +12,7 @@ function registerDocumentHandlers() {
   ipcMain.handle('documents:list', (_, { workspaceId, parentId = null, all = false }) => {
     const db = getDb();
     if (all) {
-      // 返回工作区全部文档（含子文档），用于构建文件树
+      // 全量返回工作区所有文档（含子文档），用于构建文件树
       return db.prepare(`
         SELECT d.*, GROUP_CONCAT(dt.tag) as tags_raw
         FROM documents d
@@ -123,6 +123,20 @@ function registerDocumentHandlers() {
     return { success: true, updatedAt: now };
   });
 
+  ipcMain.handle('documents:duplicate', (_, { id }) => {
+    const db = getDb();
+    const doc = db.prepare('SELECT * FROM document_contents WHERE document_id = ?').get(id);
+    const orig = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+    if (!orig) return null;
+    const { v4: uuidv4 } = require('uuid');
+    const newId = uuidv4();
+    const now = Date.now();
+    db.prepare(`INSERT INTO documents (id,title,content_type,parent_id,workspace_id,is_folder,created_at,updated_at)
+      VALUES (?,?,?,?,?,0,?,?)`).run(newId, (orig.title||'无标题')+' 副本', orig.content_type, orig.parent_id, orig.workspace_id, now, now);
+    if (doc) db.prepare('INSERT INTO document_contents (document_id,content) VALUES (?,?)').run(newId, doc.content||'');
+    return normalizeDocument({ ...orig, id: newId, title: (orig.title||'无标题')+' 副本', created_at: now, updated_at: now });
+  });
+
   ipcMain.handle('documents:delete', (_, { id }) => {
     const db = getDb();
     db.transaction(() => {
@@ -153,10 +167,27 @@ function registerDocumentHandlers() {
     return { isPinned: Boolean(newVal) };
   });
 
+  ipcMain.handle('documents:reorder', (_, { items }) => {
+    // items: [{ id, sortOrder }]
+    const db = getDb();
+    const stmt = db.prepare('UPDATE documents SET sort_order = ?, updated_at = ? WHERE id = ?');
+    const update = db.transaction((rows) => {
+      for (const row of rows) stmt.run(row.sortOrder, Date.now(), row.id);
+    });
+    update(items);
+    return { ok: true };
+  });
+
   ipcMain.handle('documents:archive', (_, { id, archived }) => {
     const db = getDb();
     db.prepare('UPDATE documents SET is_archived = ?, updated_at = ? WHERE id = ?').run(archived ? 1 : 0, Date.now(), id);
     return { success: true };
+  });
+
+  ipcMain.handle('documents:rename', (_, { id, title }) => {
+    const db = getDb();
+    db.prepare('UPDATE documents SET title = ?, updated_at = ? WHERE id = ?').run(title, Date.now(), id);
+    return { ok: true };
   });
 
   ipcMain.handle('documents:move', (_, { id, parentId }) => {

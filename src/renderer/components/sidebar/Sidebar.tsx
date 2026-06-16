@@ -244,7 +244,8 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   const [folderName, setFolderName] = useState('');
   const [folderParentId, setFolderParentId] = useState<string | undefined>(undefined);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: any } | null>(null);
-  const [inlineInput, setInlineInput] = useState<{ parentId: string | null; type: 'doc' | 'folder' } | null>(null);
+  const [inlineInput, setInlineInput] = useState<{ parentId: string | undefined; type: 'doc' | 'folder' } | null>(null);
+  const [renameId, setRenameId] = useState<string | null>(null);
   const [inlineName, setInlineName] = useState('');
   // 加载全部文档（含子文档）用于构建文件树
   React.useEffect(() => {
@@ -269,13 +270,21 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
     refreshTree();
   };
   const confirmInline = async () => {
-    if (!activeWsId || !inlineName.trim() || !inlineInput) { setInlineInput(null); return; }
-    await (dispatch2 as any)(createDocument({
-      workspaceId: activeWsId,
-      title: inlineName.trim(),
-      isFolder: inlineInput.type === 'folder',
-      parentId: inlineInput.parentId || undefined,
-    }));
+    if (!inlineName.trim()) { setInlineInput(null); setRenameId(null); return; }
+    if (renameId) {
+      // 重命名模式
+      await ipc.invoke('documents:rename', { id: renameId, title: inlineName.trim() });
+      setRenameId(null);
+    } else {
+      // 新建模式
+      if (!activeWsId || !inlineInput) { setInlineInput(null); return; }
+      await (dispatch2 as any)(createDocument({
+        workspaceId: activeWsId,
+        title: inlineName.trim(),
+        isFolder: inlineInput.type === 'folder',
+        parentId: inlineInput.parentId || undefined,
+      }));
+    }
     setInlineInput(null); setInlineName('');
     refreshTree();
   };
@@ -365,9 +374,34 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
                 ✏️ 打开编辑
               </div>
             )}
+            {/* 重命名 */}
+            <div onClick={() => {
+              setInlineInput({ parentId: ctxMenu.doc.parentId || undefined, type: ctxMenu.doc.isFolder ? 'folder' : 'doc' });
+              setInlineName(ctxMenu.doc.title || '');
+              setRenameId(ctxMenu.doc.id);
+              setCtxMenu(null);
+            }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+              onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+              onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              ✏️ 重命名
+            </div>
+            {/* 复制 */}
+            {!ctxMenu.doc.isFolder && (
+              <div onClick={async () => {
+                setCtxMenu(null);
+                await ipc.invoke('documents:duplicate', { id: ctxMenu.doc.id });
+                refreshTree();
+              }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+                onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                📋 创建副本
+              </div>
+            )}
+            <div style={{ height: '0.5px', background: 'var(--border)', margin: '4px 0' }} />
             {/* 删除 */}
             <div onClick={async () => {
               setCtxMenu(null);
+              if (!window.confirm(`确认删除「${ctxMenu.doc.title || '无标题'}」？`)) return;
               await ipc.invoke('documents:delete', { id: ctxMenu.doc.id });
               refreshTree();
             }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: '#e87a7a', display: 'flex', alignItems: 'center', gap: 8 }}
@@ -385,7 +419,7 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
           <div style={{ position: 'fixed', left: '50%', top: '40%', transform: 'translate(-50%,-50%)', background: 'var(--bg-surface)', border: '1px solid var(--border-md)', borderRadius: 12, padding: '18px 20px', minWidth: 280, boxShadow: '0 16px 48px rgba(0,0,0,0.4)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 10 }}>
-              {inlineInput.type === 'folder' ? '📁 新建文件夹' : '📄 新建文档'}
+              {renameId ? '✏️ 重命名' : inlineInput.type === 'folder' ? '📁 新建文件夹' : '📄 新建文档'}
             </div>
             <input value={inlineName} onChange={e => setInlineName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') confirmInline(); if (e.key === 'Escape') setInlineInput(null); }}
