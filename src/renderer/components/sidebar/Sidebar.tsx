@@ -238,6 +238,8 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   const activeWsId = useSelector((s: RootState) => s.app.activeWorkspaceId);
   const dispatch2 = useDispatch<AppDispatch>();
   const [allTreeDocs, setAllTreeDocs] = useState<any[]>([]);
+  const [folderInputting, setFolderInputting] = useState(false);
+  const [folderName, setFolderName] = useState('');
   // 加载全部文档（含子文档）用于构建文件树
   React.useEffect(() => {
     if (!activeWsId) return;
@@ -245,11 +247,18 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
       .then(docs => setAllTreeDocs(docs || []))
       .catch(() => {});
   }, [activeWsId, allDocs.length]);
-  const handleNewFolder = async () => {
-    if (!activeWsId) return;
-    const name = window.prompt('文件夹名称：', '新文件夹');
-    if (!name?.trim()) return;
-    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: name.trim(), isFolder: true }));
+  const handleNewFolder = () => {
+    setFolderInputting(true);
+    setFolderName('新文件夹');
+  };
+  const confirmNewFolder = async () => {
+    if (!activeWsId || !folderName.trim()) { setFolderInputting(false); return; }
+    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: folderName.trim(), isFolder: true }));
+    setFolderInputting(false);
+    setFolderName('');
+    // 刷新文件树
+    ipc.invoke<any[]>('documents:list', { workspaceId: activeWsId, all: true })
+      .then(docs => setAllTreeDocs(docs || [])).catch(() => {});
   };
   return (
     <div>
@@ -274,7 +283,23 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
         </button>
       </div>
       {showTree
-        ? <DocTree docs={allTreeDocs.length > 0 ? allTreeDocs : allDocs} onOpen={onOpen} onNew={onNew} onNewFolder={handleNewFolder} />
+        ? <>
+            {folderInputting && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderBottom: '0.5px solid var(--border)' }}>
+                <span style={{ fontSize: 14 }}>📁</span>
+                <input
+                  value={folderName}
+                  onChange={e => setFolderName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmNewFolder(); if (e.key === 'Escape') setFolderInputting(false); }}
+                  autoFocus
+                  style={{ flex: 1, background: 'var(--bg-surface3)', border: '1px solid var(--accent)', borderRadius: 5, padding: '3px 7px', fontSize: 12.5, color: 'var(--text-primary)', fontFamily: 'inherit', outline: 'none' }}
+                />
+                <button onClick={confirmNewFolder} style={{ padding: '2px 8px', borderRadius: 5, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>✓</button>
+                <button onClick={() => setFolderInputting(false)} style={{ padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>✕</button>
+              </div>
+            )}
+            <DocTree docs={allTreeDocs.length > 0 ? allTreeDocs : allDocs} onOpen={onOpen} onNew={onNew} onNewFolder={handleNewFolder} />
+          </>
         : (recent.length > 0
             ? recent.map(d => <DocRow key={d.id} doc={d} onClick={() => onOpen(d)} />)
             : <div style={{ padding: '8px 22px', fontSize: 12, color: 'var(--text-tertiary)' }}>{T('sidebar.noDocs')}</div>
