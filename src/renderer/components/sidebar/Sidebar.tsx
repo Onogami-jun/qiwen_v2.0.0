@@ -274,6 +274,9 @@ export const Sidebar: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const activeView = useSelector((s: RootState) => s.app.activeView);
   const activeWorkspaceId = useSelector((s: RootState) => s.app.activeWorkspaceId);
+  const allWorkspaces = useSelector((s: RootState) => (s as any).workspaces?.items || []);
+  const isLoggedIn = useSelector((s: RootState) => (s as any).auth?.isAuthenticated && !(s as any).auth?.isLocalMode);
+  const [wsTab, setWsTab] = React.useState<'mine' | 'team'>('mine');
   const user = useSelector((s: RootState) => (s as any).auth?.user);
 
   const allDocs = useSelector((s: RootState) => s.documents.tree);
@@ -407,7 +410,68 @@ export const Sidebar: React.FC = () => {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' as const }}>
-        {activePanel === 'workbench'  && <PanelExplorer recent={recentDocs} onOpen={openDoc} onNew={() => setShowNewDoc(true)} />}
+        {activePanel === 'workbench' && (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* 个人 / 团队 tab */}
+            {isLoggedIn && (
+              <div style={{ display: 'flex', padding: '6px 8px 0', gap: 2, flexShrink: 0 }}>
+                {(['mine', 'team'] as const).map(tab => (
+                  <button key={tab} onClick={() => setWsTab(tab)} style={{
+                    flex: 1, padding: '5px 0', borderRadius: 7, border: 'none',
+                    background: wsTab === tab ? 'var(--bg-surface3)' : 'transparent',
+                    color: wsTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit', fontWeight: wsTab === tab ? 600 : 400,
+                    transition: 'all 0.15s',
+                  }}>
+                    {tab === 'mine' ? '👤 个人' : '👥 团队'}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 团队工作区列表 */}
+            {wsTab === 'team' && isLoggedIn ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+                {allWorkspaces.filter((w: any) => w.isShared || w.org_id).length === 0 ? (
+                  <div style={{ padding: '24px 12px', textAlign: 'center' as const }}>
+                    <div style={{ fontSize: 28, marginBottom: 10 }}>👥</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', lineHeight: 1.7, marginBottom: 14 }}>
+                      还没有团队工作区<br />邀请队友一起协作
+                    </div>
+                    <button onClick={() => (dispatch as any)(setView('org'))} style={{
+                      width: '100%', padding: '7px', borderRadius: 8, border: '1px solid rgba(200,169,110,0.3)',
+                      background: 'rgba(200,169,110,0.07)', color: 'var(--accent)',
+                      cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
+                    }}>+ 创建团队工作区</button>
+                  </div>
+                ) : (
+                  allWorkspaces.filter((w: any) => w.isShared || w.org_id).map((ws: any) => (
+                    <div key={ws.id} onClick={() => (dispatch as any)(setActiveWorkspace(ws.id))}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px',
+                        borderRadius: 7, cursor: 'pointer', marginBottom: 2,
+                        background: activeWorkspaceId === ws.id ? 'var(--bg-active)' : 'transparent',
+                        color: activeWorkspaceId === ws.id ? 'var(--accent)' : 'var(--text-secondary)',
+                        transition: 'background 0.12s',
+                      }}
+                      onMouseOver={e => { if (activeWorkspaceId !== ws.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+                      onMouseOut={e => { if (activeWorkspaceId !== ws.id) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>{ws.icon || '📂'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{ws.name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>🌐 共享</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <PanelExplorer recent={recentDocs} onOpen={openDoc} onNew={() => setShowNewDoc(true)} />
+              </div>
+            )}
+          </div>
+        )}
         {activePanel === 'library'    && <PanelLibrary  docs={allDocs} onOpen={openDoc} onNew={() => setShowNewDoc(true)} />}
         {activePanel === 'search'     && <PanelSearch   wsId={activeWorkspaceId} recent={recentDocs} onOpen={openDoc} />}
         {activePanel === 'code'       && <PanelInfo title="Code Viewer" desc="打开本地代码文件，支持 100+ 语言语法高亮，可添加行级批注和团队评论。" btnLabel="打开代码文件" onOpen={() => (dispatch as any)(setView('code'))} />}
