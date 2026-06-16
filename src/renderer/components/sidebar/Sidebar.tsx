@@ -183,6 +183,7 @@ const DocTreeNode: React.FC<{
     return (
       <div>
         <div onClick={() => setExpanded(v => !v)}
+          onContextMenu={e => { e.preventDefault(); onCtxMenu?.(e, doc); }}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: `4px 8px 4px ${pl}px`, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', borderRadius: 5, transition: 'background 0.1s' }}
           onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
           onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
@@ -196,7 +197,7 @@ const DocTreeNode: React.FC<{
           )}
         </div>
         {expanded && children.map(child => (
-          <DocTreeNode key={child.id} doc={child} docs={docs} depth={depth + 1} onOpen={onOpen} onNew={onNew} />
+          <DocTreeNode key={child.id} doc={child} docs={docs} depth={depth + 1} onOpen={onOpen} onNew={onNew} onCtxMenu={onCtxMenu} />
         ))}
       </div>
     );
@@ -226,7 +227,7 @@ const DocTree: React.FC<{ docs: any[]; onOpen: (d: DocumentMeta) => void; onNew:
   );
   return (
     <div style={{ padding: '4px 4px' }}>
-      {roots.map(d => <DocTreeNode key={d.id} doc={d} docs={docs} depth={0} onOpen={onOpen} />)}
+      {roots.map(d => <DocTreeNode key={d.id} doc={d} docs={docs} depth={0} onOpen={onOpen} onCtxMenu={onCtxMenu} />)}
     </div>
   );
 };
@@ -240,6 +241,10 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
   const [allTreeDocs, setAllTreeDocs] = useState<any[]>([]);
   const [folderInputting, setFolderInputting] = useState(false);
   const [folderName, setFolderName] = useState('');
+  const [folderParentId, setFolderParentId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; doc: any } | null>(null);
+  const [inlineInput, setInlineInput] = useState<{ parentId: string | null; type: 'doc' | 'folder' } | null>(null);
+  const [inlineName, setInlineName] = useState('');
   // 加载全部文档（含子文档）用于构建文件树
   React.useEffect(() => {
     if (!activeWsId) return;
@@ -251,14 +256,27 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
     setFolderInputting(true);
     setFolderName('新文件夹');
   };
-  const confirmNewFolder = async () => {
-    if (!activeWsId || !folderName.trim()) { setFolderInputting(false); return; }
-    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: folderName.trim(), isFolder: true }));
-    setFolderInputting(false);
-    setFolderName('');
-    // 刷新文件树
+  const refreshTree = () => {
+    if (!activeWsId) return;
     ipc.invoke<any[]>('documents:list', { workspaceId: activeWsId, all: true })
       .then(docs => setAllTreeDocs(docs || [])).catch(() => {});
+  };
+  const confirmNewFolder = async () => {
+    if (!activeWsId || !folderName.trim()) { setFolderInputting(false); return; }
+    await (dispatch2 as any)(createDocument({ workspaceId: activeWsId, title: folderName.trim(), isFolder: true, parentId: folderParentId }));
+    setFolderInputting(false); setFolderName(''); setFolderParentId(null);
+    refreshTree();
+  };
+  const confirmInline = async () => {
+    if (!activeWsId || !inlineName.trim() || !inlineInput) { setInlineInput(null); return; }
+    await (dispatch2 as any)(createDocument({
+      workspaceId: activeWsId,
+      title: inlineName.trim(),
+      isFolder: inlineInput.type === 'folder',
+      parentId: inlineInput.parentId,
+    }));
+    setInlineInput(null); setInlineName('');
+    refreshTree();
   };
   return (
     <div>
@@ -298,13 +316,88 @@ const PanelExplorer: React.FC<{ recent: DocumentMeta[]; onOpen: (d: DocumentMeta
                 <button onClick={() => setFolderInputting(false)} style={{ padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>✕</button>
               </div>
             )}
-            <DocTree docs={allTreeDocs.length > 0 ? allTreeDocs : allDocs} onOpen={onOpen} onNew={onNew} onNewFolder={handleNewFolder} />
+            <DocTree docs={allTreeDocs.length > 0 ? allTreeDocs : allDocs} onOpen={onOpen} onNew={onNew} onNewFolder={handleNewFolder}
+              onCtxMenu={(e, doc) => setCtxMenu({ x: e.clientX, y: e.clientY, doc })} />
           </>
         : (recent.length > 0
             ? recent.map(d => <DocRow key={d.id} doc={d} onClick={() => onOpen(d)} />)
             : <div style={{ padding: '8px 22px', fontSize: 12, color: 'var(--text-tertiary)' }}>{T('sidebar.noDocs')}</div>
           )
       }
+      {/* 右键菜单 */}
+      {ctxMenu && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }} onClick={() => setCtxMenu(null)}>
+          <div style={{
+            position: 'fixed', left: ctxMenu.x, top: ctxMenu.y,
+            background: 'var(--bg-surface2)', border: '0.5px solid var(--border-md)',
+            borderRadius: 10, padding: '4px 0', minWidth: 160,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            zIndex: 10000,
+          }} onClick={e => e.stopPropagation()}>
+            {/* 在此文件夹里新建文档 */}
+            <div onClick={() => {
+              setInlineInput({ parentId: ctxMenu.doc.id, type: 'doc' });
+              setInlineName('无标题');
+              setCtxMenu(null);
+            }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+              onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+              onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              📄 新建文档
+            </div>
+            {/* 在此文件夹里新建子文件夹 */}
+            <div onClick={() => {
+              setInlineInput({ parentId: ctxMenu.doc.id, type: 'folder' });
+              setInlineName('新文件夹');
+              setCtxMenu(null);
+            }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+              onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+              onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              📁 新建文件夹
+            </div>
+            <div style={{ height: '0.5px', background: 'var(--border)', margin: '4px 0' }} />
+            {/* 打开（仅文档） */}
+            {!ctxMenu.doc.isFolder && (
+              <div onClick={() => { onOpen(ctxMenu.doc); setCtxMenu(null); }}
+                style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}
+                onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                ✏️ 打开编辑
+              </div>
+            )}
+            {/* 删除 */}
+            <div onClick={async () => {
+              setCtxMenu(null);
+              await ipc.invoke('documents:delete', { id: ctxMenu.doc.id });
+              refreshTree();
+            }} style={{ padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: '#e87a7a', display: 'flex', alignItems: 'center', gap: 8 }}
+              onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'rgba(232,122,122,0.08)'}
+              onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+              🗑️ 删除
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 内联输入框（新建文档/文件夹到指定父节点）*/}
+      {inlineInput && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.3)' }} onClick={() => setInlineInput(null)}>
+          <div style={{ position: 'fixed', left: '50%', top: '40%', transform: 'translate(-50%,-50%)', background: 'var(--bg-surface)', border: '1px solid var(--border-md)', borderRadius: 12, padding: '18px 20px', minWidth: 280, boxShadow: '0 16px 48px rgba(0,0,0,0.4)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 10 }}>
+              {inlineInput.type === 'folder' ? '📁 新建文件夹' : '📄 新建文档'}
+            </div>
+            <input value={inlineName} onChange={e => setInlineName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmInline(); if (e.key === 'Escape') setInlineInput(null); }}
+              autoFocus
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--bg-surface3)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const, marginBottom: 12 }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setInlineInput(null)} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>取消</button>
+              <button onClick={confirmInline} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit', fontWeight: 600 }}>创建</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
