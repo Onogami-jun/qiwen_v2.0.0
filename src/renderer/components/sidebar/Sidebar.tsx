@@ -174,7 +174,7 @@ const DocTreeNode: React.FC<{
   depth: number;
   onOpen: (d: DocumentMeta) => void;
   onNew?: (parentId: string) => void;
-}> = ({ doc, docs, depth, onOpen, onNew }) => {
+}> = ({ doc, docs, depth, onOpen, onNew, onCtxMenu }) => {
   const [expanded, setExpanded] = useState(true);
   const children = docs.filter((d: any) => d.parentId === doc.id);
   const pl = 10 + depth * 14;
