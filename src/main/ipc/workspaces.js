@@ -68,14 +68,20 @@ function registerWorkspaceHandlers() {
   ipcMain.handle('workspaces:upsert', (_, ws) => {
     const now = ws.updatedAt ? new Date(ws.updatedAt).getTime() : Date.now();
     const created = ws.createdAt ? new Date(ws.createdAt).getTime() : now;
+    const orgId = ws.orgId || ws.org_id || null;
+    const ownerId = ws.ownerId || ws.owner_id || null;
+    const isShared = ws.isShared || ws.is_shared ? 1 : 0;
     getDb().prepare(`
-      INSERT INTO workspaces (id, name, description, icon, color, profession, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workspaces (id, name, description, icon, color, profession, org_id, owner_id, is_shared, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, description=excluded.description, icon=excluded.icon,
-        color=excluded.color, profession=excluded.profession, updated_at=excluded.updated_at
-      WHERE excluded.updated_at > workspaces.updated_at
-    `).run(ws.id, ws.name, ws.description || '', ws.icon || '📁', ws.color || '#c8a96e', ws.profession || 'general', created, now);
+        color=excluded.color, profession=excluded.profession,
+        org_id=excluded.org_id, owner_id=excluded.owner_id, is_shared=excluded.is_shared,
+        updated_at=excluded.updated_at
+      WHERE excluded.updated_at >= workspaces.updated_at
+    `).run(ws.id, ws.name, ws.description || '', ws.icon || '📁', ws.color || '#c8a96e',
+           ws.profession || 'general', orgId, ownerId, isShared, created, now);
     return { ok: true };
   });
 }
