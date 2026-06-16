@@ -1,5 +1,5 @@
 /**
- * OrgManageView.tsx — 组织管理（飞书式多端协作）
+ * OrgManageView.tsx — 组织管理（多端实时协作）
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
@@ -182,7 +182,7 @@ export const OrgManageView: React.FC<Props> = ({ orgId }) => {
         ) : tab === 'workspaces' ? (
           <div style={{ maxWidth:700 }}>
             <div style={{ background:'rgba(91,156,246,0.06)', border:'1px solid rgba(91,156,246,0.2)', borderRadius:10, padding:'12px 16px', marginBottom:20, fontSize:13, color:'var(--text-secondary)', lineHeight:1.7 }}>
-              💡 <strong>共享工作区</strong>是组织内所有成员共同可见的工作空间，类似飞书的「团队空间」。<br/>
+              💡 <strong>共享工作区</strong>是组织内所有成员共同可见的工作空间，类似「团队空间」的概念。<br/>
               创建后组织成员登录启文，同步后即可在工作区列表中看到并协作编辑。
             </div>
 
