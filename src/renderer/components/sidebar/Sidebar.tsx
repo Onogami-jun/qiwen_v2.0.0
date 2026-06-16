@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
-import { setView, View, openTab } from '../../store/slices/appSlice';
+import { setView, View, openTab, setActiveWorkspace } from '../../store/slices/appSlice';
 import { clearAuth } from '../../store/slices/authSlice';
 import { createDocument, fetchDocuments, searchDocuments } from '../../store/slices/documentsSlice';
 import { DocumentMeta } from '../../../shared/types';
