@@ -107,9 +107,9 @@ const FloatingToolbar: React.FC<{ editor: any }> = ({ editor }) => {
     <BubbleMenu editor={editor} tippyOptions={{ duration: 150, placement: 'top' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 2,
-        padding: '4px 8px', background: '#1a1a28',
-        border: '0.5px solid rgba(255,255,255,0.12)', borderRadius: 10,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)',
+        padding: '4px 6px', background: '#1c1c24',
+        border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: 10,
+        boxShadow: '0 8px 28px rgba(0,0,0,0.45)', backdropFilter: 'blur(14px)',
       }}>
         <button style={btn(editor.isActive('bold'))} title="加粗 Ctrl+B"
           onMouseDown={e => { e.preventDefault(); editor.chain().focus().toggleBold().run(); }}>
@@ -173,6 +173,17 @@ const AI_OPS = [
 const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
   const [loading, setLoading] = React.useState(false);
   const [activeOp, setActiveOp] = React.useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
 
   const runOp = async (op: typeof AI_OPS[0]) => {
     const { from, to, empty } = editor.state.selection;
@@ -180,6 +191,7 @@ const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
     const selectedText = editor.state.doc.textBetween(from, to, ' ');
     if (!selectedText.trim()) return;
 
+    setMenuOpen(false);
     setLoading(true);
     setActiveOp(op.id);
     try {
@@ -197,33 +209,62 @@ const AIInlineMenu: React.FC<{ editor: any }> = ({ editor }) => {
     }
   };
 
-  const btnStyle = (active: boolean): React.CSSProperties => ({
-    padding: '3px 7px', border: 'none', borderRadius: 5,
-    background: active ? 'rgba(200,169,110,0.3)' : 'transparent',
-    color: active ? '#c8a96e' : 'rgba(200,169,110,0.8)',
-    cursor: loading ? 'wait' : 'pointer', fontSize: 11.5, fontWeight: 500,
-    transition: 'all 0.1s', whiteSpace: 'nowrap' as const,
-    display: 'flex', alignItems: 'center', gap: 3, height: 26,
-  });
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', color: '#c8a96e', fontSize: 11.5, height: 26, whiteSpace: 'nowrap' }}>
+        <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid rgba(200,169,110,0.3)', borderTopColor: '#c8a96e', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+        {AI_OPS.find(o => o.id === activeOp)?.label}中...
+      </div>
+    );
+  }
 
   return (
-    <>
-      {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 6px', color: '#c8a96e', fontSize: 11.5 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid rgba(200,169,110,0.3)', borderTopColor: '#c8a96e', animation: 'spin 0.7s linear infinite' }} />
-          AI {AI_OPS.find(o => o.id === activeOp)?.label}中...
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <button
+        onMouseDown={e => { e.preventDefault(); setMenuOpen(v => !v); }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4, height: 26, padding: '0 9px',
+          border: 'none', borderRadius: 6,
+          background: menuOpen ? 'rgba(200,169,110,0.22)' : 'transparent',
+          color: '#c8a96e', cursor: 'pointer', fontSize: 12, fontWeight: 500,
+          transition: 'background 0.12s', whiteSpace: 'nowrap',
+        }}
+        onMouseEnter={e => { if (!menuOpen) (e.currentTarget as HTMLElement).style.background = 'rgba(200,169,110,0.12)'; }}
+        onMouseLeave={e => { if (!menuOpen) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+      >
+        <span style={{ fontSize: 12 }}>✦</span> AI
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 116,
+          background: '#1c1c24', border: '0.5px solid rgba(255,255,255,0.1)', borderRadius: 9,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.5)', backdropFilter: 'blur(14px)',
+          padding: '4px', zIndex: 50,
+          animation: 'modalIn 0.14s cubic-bezier(0.2,0.9,0.3,1.1) both',
+        }}>
+          {AI_OPS.map(op => (
+            <button key={op.id}
+              onMouseDown={e => { e.preventDefault(); runOp(op); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7, width: '100%',
+                padding: '6px 9px', border: 'none', borderRadius: 6, background: 'transparent',
+                color: 'rgba(232,229,222,0.9)', cursor: 'pointer', fontSize: 12.5,
+                fontFamily: 'inherit', textAlign: 'left' as const, transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,169,110,0.14)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+              <span style={{ fontSize: 11, color: '#c8a96e', flexShrink: 0 }}>✦</span>
+              {op.label}
+            </button>
+          ))}
         </div>
-      ) : (
-        AI_OPS.map(op => (
-          <button key={op.id} style={btnStyle(false)} title={op.label}
-            onMouseDown={e => { e.preventDefault(); runOp(op); }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,169,110,0.15)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-            ✦ {op.label}
-          </button>
-        ))
       )}
-    </>
+    </div>
   );
 };
 
@@ -520,33 +561,51 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         )}
 
-        {/* 在线协作者头像（右上角） */}
-        {onlineUsers.length > 0 && (
-          <div style={{ position: 'absolute', top: 8, right: showCommentPanel ? 336 : 56, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <OnlineAvatars users={onlineUsers} />
-            {isConnected && (
-              <span style={{ fontSize: 10, color: '#52c97a', background: '#52c97a18', padding: '2px 7px', borderRadius: 10, border: '1px solid #52c97a30' }}>
-                实时协作中
-              </span>
-            )}
-          </div>
-        )}
+        {/* 顶部右侧统一工具条：协作头像 / AI开关 / 评论 ─────────── */}
+        <div style={{
+          position: 'absolute', top: 10, right: showCommentPanel ? 336 : 12, zIndex: 25,
+          display: 'flex', alignItems: 'center', gap: 6,
+          transition: 'right 0.2s var(--ease-smooth, ease)',
+        }}>
+          {onlineUsers.length > 0 && (
+            <>
+              <OnlineAvatars users={onlineUsers} />
+              {isConnected && (
+                <span style={{ fontSize: 10, color: '#52c97a', background: '#52c97a18', padding: '2px 7px', borderRadius: 10, border: '1px solid #52c97a30', whiteSpace: 'nowrap' }}>
+                  实时协作中
+                </span>
+              )}
+              <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+            </>
+          )}
 
-        {/* 评论面板开关 */}
-        <button
-          onClick={() => setShowCommentPanel(v => !v)}
-          title="评论面板"
-          style={{
-            position: 'absolute', top: 8, right: 12, zIndex: 20,
-            padding: '3px 10px', borderRadius: 6,
-            border: `1px solid ${showCommentPanel ? 'var(--accent)' : 'var(--border)'}`,
-            background: showCommentPanel ? 'rgba(200,169,110,0.15)' : 'var(--bg-surface2)',
-            color: showCommentPanel ? 'var(--accent)' : 'var(--text-tertiary)',
-            cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit',
-          }}
-        >
-          💬
-        </button>
+          <button onClick={() => setCopilotToggle(v => !v)}
+            title={copilotToggle ? 'AI 续写已开启（点击关闭）' : 'AI 续写已关闭（点击开启）'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, height: 24, padding: '0 9px', borderRadius: 6,
+              border: `1px solid ${copilotToggle ? 'rgba(200,169,110,0.3)' : 'var(--border)'}`,
+              background: copilotToggle ? 'rgba(200,169,110,0.08)' : 'var(--bg-surface2)',
+              color: copilotToggle ? 'var(--accent)' : 'var(--text-tertiary)',
+              cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s', whiteSpace: 'nowrap',
+            }}>
+            🤖 AI {copilotToggle ? '已开' : '已关'}
+          </button>
+
+          <button
+            onClick={() => setShowCommentPanel(v => !v)}
+            title="评论面板"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: 24, width: 30, borderRadius: 6,
+              border: `1px solid ${showCommentPanel ? 'var(--accent)' : 'var(--border)'}`,
+              background: showCommentPanel ? 'rgba(200,169,110,0.15)' : 'var(--bg-surface2)',
+              color: showCommentPanel ? 'var(--accent)' : 'var(--text-tertiary)',
+              cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit', transition: 'all 0.15s',
+            }}
+          >
+            💬
+          </button>
+        </div>
 
         <FloatingToolbar editor={editor} />
 
@@ -583,15 +642,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             }
           }}
         />
-
-        {/* AI 开关按钮（右上角）*/}
-        <div style={{ position: 'absolute', top: 8, right: showCommentPanel ? 336 : 8, zIndex: 30, display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button onClick={() => setCopilotToggle(v => !v)}
-            title={copilotToggle ? 'AI 续写已开启（点击关闭）' : 'AI 续写已关闭（点击开启）'}
-            style={{ padding: '3px 9px', borderRadius: 12, border: `1px solid ${copilotToggle ? 'rgba(200,169,110,0.3)' : 'rgba(255,255,255,0.1)'}`, background: copilotToggle ? 'rgba(200,169,110,0.08)' : 'rgba(255,255,255,0.04)', color: copilotToggle ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s', backdropFilter: 'blur(4px)' }}>
-            🤖 AI {copilotToggle ? '✓' : '×'}
-          </button>
-        </div>
 
         {/* AI Copilot 提示条 */}
         {(copilotSuggestion || copilotLoading) && (
