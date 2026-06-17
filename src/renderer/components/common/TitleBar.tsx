@@ -54,7 +54,7 @@ const SaveIndicator: React.FC = () => {
       display: 'flex', alignItems: 'center', gap: 5, marginLeft: 8,
       fontSize: 11.5, color: state === 'saved' ? '#52c97a' : 'var(--text-tertiary)',
       transition: 'opacity 0.3s, color 0.3s',
-      opacity: state === 'idle' ? 0 : 1,
+      opacity: (state === 'saving' || state === 'saved') ? 1 : 0,
       ['WebkitAppRegion' as string]: 'no-drag',
     }}>
       {state === 'saving' ? (
