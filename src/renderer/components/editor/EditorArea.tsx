@@ -24,37 +24,28 @@ export const EditorArea: React.FC = () => {
   const failedDocIds = useSelector((s: RootState) => s.documents.failedDocIds);
   const saving = useSelector((s: RootState) => s.documents.saving);
   const [mode, setMode] = useState<EditorMode>('edit');
-  const [focusMode, setFocusMode] = React.useState(false);
-  const [typewriterMode, setTypewriterMode] = React.useState(false);
-  const [collabOverride, setCollabOverride] = React.useState<boolean | null>(null);
-  const user = useSelector((s: RootState) => (s as any).auth?.user);
-  const isLocalMode = useSelector((s: RootState) => (s as any).auth?.isLocalMode);
-  const isCollabOn = collabOverride !== null ? collabOverride : (!!user && !isLocalMode);
 
-  // F11 专注模式
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'F11') { e.preventDefault(); setFocusMode(v => !v); }
-      if (e.key === 'Escape' && focusMode) setFocusMode(false);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [focusMode]);
-
-  // 专注模式下隐藏 titlebar save area
-  React.useEffect(() => {
-    document.body.classList.toggle('focus-mode', focusMode);
-    document.body.classList.toggle('typewriter-mode', typewriterMode);
-    return () => {
-      document.body.classList.remove('focus-mode');
-      document.body.classList.remove('typewriter-mode');
-    };
-  }, [focusMode, typewriterMode]);
   // 协作模式：登录后默认开启，用户可手动关闭（null = 跟随默认）
   const user = useSelector((s: RootState) => (s as any).auth?.user);
   const isLocalMode = useSelector((s: RootState) => (s as any).auth?.isLocalMode);
   const [collabOverride, setCollabOverride] = useState<boolean | null>(null);
   const isCollabOn = collabOverride !== null ? collabOverride : (!!user && !isLocalMode);
+  const [typewriterMode, setTypewriterMode] = React.useState(false);
+
+  // F11 专注模式
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F11') { e.preventDefault(); dispatch(toggleFocusMode()); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [dispatch]);
+
+  // body class 同步
+  React.useEffect(() => {
+    document.body.classList.toggle('focus-mode', !!focusMode);
+    document.body.classList.toggle('typewriter-mode', typewriterMode);
+  }, [focusMode, typewriterMode]);
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   const activeDoc = activeTab ? openDocuments[activeTab.documentId] : null;
