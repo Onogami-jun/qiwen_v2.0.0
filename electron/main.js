@@ -1,4 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, Menu, nativeTheme } = require('electron');
+const Store = require('electron-store');
+const winStore = new Store({ name: 'window-state' });
 const path = require('path');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
@@ -258,12 +260,18 @@ function createWindow() {
   const isWin = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
 
+  // 恢复上次窗口状态
+  const savedBounds = winStore.get('bounds', { width: 1280, height: 800 });
+  const savedMaximized = winStore.get('maximized', false);
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: savedBounds.width || 1280,
+    height: savedBounds.height || 800,
+    x: savedBounds.x,
+    y: savedBounds.y,
     minWidth: 900,
     minHeight: 600,
-    center: true,
+    center: !savedBounds.x,
     maximizable: true,
     fullscreenable: true,
     // Windows上明确禁止启动时最大化
@@ -301,17 +309,39 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     clearTimeout(showFallbackTimer);
-    // 确保不是最大化状态再显示
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
     mainWindow.show();
-    mainWindow.center();
+    if (savedMaximized) mainWindow.maximize();
     if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
+
+  // 保存窗口状态
+  const saveWinState = () => {
+    if (!mainWindow || mainWindow.isMaximized() || mainWindow.isMinimized()) return;
+    winStore.set('bounds', mainWindow.getBounds());
+  };
+  mainWindow.on('resize', saveWinState);
+  mainWindow.on('move', saveWinState);
+  mainWindow.on('maximize', () => winStore.set('maximized', true));
+  mainWindow.on('unmaximize', () => winStore.set('maximized', false));
 
   // 捕获渲染进程崩溃，防止白屏无响应
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     log.error('Renderer process gone:', details.reason, details.exitCode);
-    dialog.showErrorBox('启文崩溃', `渲染进程异常退出 (${details.reason})，请重新启动应用。`);
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'error',
+      title: '启文遇到了问题',
+      message: '渲染进程意外退出',
+      detail: `原因：${details.reason}
+
+你的数据已自动保存。点击「重启」即可继续使用。`,
+      buttons: ['重启启文', '退出'],
+      defaultId: 0,
+    });
+    if (choice === 0) {
+      mainWindow.loadURL(isDev ? 'http://localhost:3000' : `file://${path.join(__dirname, '../build/index.html')}`);
+    } else {
+      app.quit();
+    }
   });
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
     log.error('Page failed to load:', errorCode, errorDescription, validatedURL);
@@ -924,6 +954,8 @@ function setupAutoUpdater() {
 // ── 性能优化：限制 V8 堆大小，避免内存无限增长 ──────────────────
 // 对桌面写作应用，512MB 堆内存足够，防止内存泄漏时吃满物理内存
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+// 提前触发 V8 代码缓存，加速二次启动
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 // 禁用不必要的 GPU 特性（写作应用不需要 WebGL/硬件加速）
 app.commandLine.appendSwitch('disable-features', 'UseOzonePlatform,WebRtcHideLocalIpsWithMdns');
 // 减少渲染进程内存占用

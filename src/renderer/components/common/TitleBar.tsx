@@ -10,99 +10,66 @@ interface TitleBarProps {
   showControls?: boolean;
 }
 
-// ── 保存 / 另存为 按钮组 ─────────────────────────────────────
-const SaveButtons: React.FC = () => {
-  const dispatch = useDispatch<AppDispatch>();
+// ── 自动保存状态指示器（无需手动保存）──────────────────────
+// 用极细的视觉提示代替按钮，降低认知负担
+const SaveIndicator: React.FC = () => {
   const activeTabId = useSelector((s: RootState) => s.app.activeTabId);
   const tabs = useSelector((s: RootState) => s.app.tabs);
   const openDocuments = useSelector((s: RootState) => s.documents.openDocuments);
   const activeTab = tabs.find(t => t.id === activeTabId);
   const activeDoc = activeTab ? openDocuments[activeTab.documentId] : null;
-  const [saveState, setSaveState] = useState<'idle'|'saving'|'saved'>('idle');
+  const [state, setState] = useState<'idle'|'saving'|'saved'>('idle');
 
-  const handleSave = useCallback(async () => {
-    if (!activeDoc) return;
-    setSaveState('saving');
-    try {
-      // 统一走 autoSave.flush，它内部会从 pending 取最新内容
-      // 如果 pending 为空，说明内容已经保存过了
-      await autoSave.flush(activeDoc.id);
-      setSaveState('saved');
-      setTimeout(() => setSaveState('idle'), 2000);
-    } catch (e) {
-      console.error('[Save] failed:', e);
-      setSaveState('idle');
-    }
-  }, [activeDoc]);
+  // 监听 autoSave 事件
+  useEffect(() => {
+    const onSaving = () => setState('saving');
+    const onSaved = () => { setState('saved'); setTimeout(() => setState('idle'), 1800); };
+    window.addEventListener('autosave:start', onSaving);
+    window.addEventListener('autosave:done', onSaved);
+    return () => {
+      window.removeEventListener('autosave:start', onSaving);
+      window.removeEventListener('autosave:done', onSaved);
+    };
+  }, []);
 
-  const handleSaveAs = useCallback(async () => {
-    const ed = (window as any).__activeEditor;
-    if (!ed || !activeDoc) return;
-    const api = (window as any).electronAPI;
-    if (api?.invoke) {
-      try {
-        await api.invoke('documents:export-docx', {
-          id: activeDoc.id,
-          title: activeDoc.title || '无标题',
-          html: ed.getHTML(),
-        });
-      } catch (err: any) {
-        alert('导出失败：' + (err?.message || '未知错误'));
+  // Ctrl+S 仍然支持，但只是 flush 不显示按钮
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (activeDoc) {
+          window.dispatchEvent(new Event('autosave:start'));
+          autoSave.flush(activeDoc.id).then(() => window.dispatchEvent(new Event('autosave:done')));
+        }
       }
-    }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [activeDoc]);
 
-  // Ctrl+S 由 EditorToolbar 统一处理，TitleBar 不重复注册
-
-  if (!activeDoc) return null;
-
-  const btnBase: React.CSSProperties = {
-    height: 26, padding: '0 10px', borderRadius: 6, cursor: 'pointer',
-    display: 'flex', alignItems: 'center', gap: 4,
-    fontSize: 12, fontFamily: 'inherit', flexShrink: 0,
-    transition: 'all 0.15s', ['WebkitAppRegion' as string]: 'no-drag',
-  };
+  if (!activeDoc || state === 'idle') return null;
 
   return (
-    <div style={{ display: 'flex', gap: 5, marginLeft: 8, ['WebkitAppRegion' as string]: 'no-drag' }}>
-      <button
-        onClick={handleSave}
-        title="保存 Ctrl+S"
-        style={{
-          ...btnBase,
-          border: '0.5px solid rgba(200,169,110,0.35)',
-          background: saveState === 'saved' ? 'rgba(82,201,122,0.12)' : 'rgba(200,169,110,0.1)',
-          color: saveState === 'saved' ? 'rgba(82,201,122,0.9)' : '#c8a96e',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,169,110,0.25)'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = saveState === 'saved' ? 'rgba(82,201,122,0.12)' : 'rgba(200,169,110,0.1)'; }}
-      >
-        {saveState === 'saving' ? (
-          <div style={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px solid #c8a96e', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
-        ) : saveState === 'saved' ? (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-        ) : (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        )}
-        {saveState === 'saved' ? '已保存' : '保存'}
-      </button>
-      <button
-        onClick={handleSaveAs}
-        title="另存为 .docx"
-        style={{
-          ...btnBase,
-          border: '0.5px solid var(--border)',
-          background: 'var(--bg-surface3)',
-          color: 'var(--text-secondary)',
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface3)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        另存为
-      </button>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 5, marginLeft: 8,
+      fontSize: 11.5, color: state === 'saved' ? '#52c97a' : 'var(--text-tertiary)',
+      transition: 'opacity 0.3s, color 0.3s',
+      opacity: state === 'idle' ? 0 : 1,
+      ['WebkitAppRegion' as string]: 'no-drag',
+    }}>
+      {state === 'saving' ? (
+        <div style={{ width: 6, height: 6, borderRadius: '50%', border: '1.5px solid var(--text-tertiary)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+      ) : (
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#52c97a', flexShrink: 0 }} />
+      )}
+      {state === 'saving' ? '保存中' : '已保存'}
     </div>
   );
+};
+
+// ── 导出按钮（保留 另存为 功能，移到工具栏） ──────────────
+const SaveButtons: React.FC = () => {
+  return <SaveIndicator />;
 };
 
 

@@ -76,6 +76,33 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
         const profileId = ws.id + '_user';
         await ipc.invoke('settings:set', { key: 'localProfile', value: { id: profileId, displayName: '本地用户' } });
       } catch {}
+      // 创建示例文档，让用户第一次打开就有内容
+      try {
+        const { ipc } = await import('../../utils/ipc');
+        const { store } = await import('../../store');
+        const state = store.getState() as any;
+        const wsId = state.app?.activeWorkspaceId;
+        if (wsId) {
+          const sampleContent = `<h1>欢迎使用启文 👋</h1>
+<p>这是一篇示例文档，帮助你快速了解启文的核心功能。</p>
+<h2>✍️ 富文本编辑</h2>
+<p>启文基于 TipTap 编辑器，支持：</p>
+<ul><li><strong>加粗</strong>、<em>斜体</em>、<u>下划线</u>、<s>删除线</s></li><li>表格、代码块、数学公式</li><li>图片、链接、任务清单</li></ul>
+<h2>🤖 AI Copilot</h2>
+<p>停止输入 1.2 秒后，AI 会自动续写建议。按 <code>Tab</code> 键接受，继续输入忽略。选中文字后还可以一键润色、翻译、扩写。</p>
+<h2>👥 实时协作</h2>
+<p>右下角绿点亮起时，团队成员可以同时编辑这篇文档，彼此的光标实时可见。</p>
+<h2>⌨️ 快捷键</h2>
+<ul><li><code>Ctrl+K</code> — 命令面板 / 搜索</li><li><code>Ctrl+B/I/U</code> — 加粗 / 斜体 / 下划线</li><li><code>Ctrl+S</code> — 手动触发保存</li><li><code>/</code> — 插入斜杠命令</li></ul>
+<p>删除这篇文档，或者开始写你自己的内容。</p>`;
+          await ipc.invoke('documents:create', {
+            workspaceId: wsId,
+            title: '欢迎使用启文 ✨',
+            content: sampleContent,
+            contentType: 'richtext',
+          });
+        }
+      } catch {}
       onComplete();
     } catch (err) {
       console.error('Onboarding createWorkspace failed:', err);

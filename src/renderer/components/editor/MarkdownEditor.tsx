@@ -253,6 +253,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const [copilotLoading, setCopilotLoading] = React.useState(false);
   const copilotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copilotEnabled = React.useRef(true);
+  const [copilotToggle, setCopilotToggle] = React.useState(true);
+  React.useEffect(() => { copilotEnabled.current = copilotToggle; }, [copilotToggle]);
 
   // ── useEditor：协作模式 vs 普通模式 ──────────────────────────
   // 关键：协作模式下必须用 Y.js 的 XmlFragment 作为内容源，
@@ -510,7 +512,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 {onlineUsers.map((u, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <div style={{ width: 6, height: 6, borderRadius: '50%', background: u.color || '#888', flexShrink: 0 }} />
-                    <span style={{ color: '#ccc', fontSize: 10 }}>{u.name || '匿名'}</span>
+                    <span style={{ color: '#ccc', fontSize: 10 }}>{u.name || u.email || '匿名'}</span>
                   </div>
                 ))}
               </div>
@@ -581,6 +583,15 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             }
           }}
         />
+
+        {/* AI 开关按钮（右上角）*/}
+        <div style={{ position: 'absolute', top: 8, right: showCommentPanel ? 336 : 8, zIndex: 30, display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button onClick={() => setCopilotToggle(v => !v)}
+            title={copilotToggle ? 'AI 续写已开启（点击关闭）' : 'AI 续写已关闭（点击开启）'}
+            style={{ padding: '3px 9px', borderRadius: 12, border: `1px solid ${copilotToggle ? 'rgba(200,169,110,0.3)' : 'rgba(255,255,255,0.1)'}`, background: copilotToggle ? 'rgba(200,169,110,0.08)' : 'rgba(255,255,255,0.04)', color: copilotToggle ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s', backdropFilter: 'blur(4px)' }}>
+            🤖 AI {copilotToggle ? '✓' : '×'}
+          </button>
+        </div>
 
         {/* AI Copilot 提示条 */}
         {(copilotSuggestion || copilotLoading) && (

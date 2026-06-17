@@ -748,3 +748,303 @@ input, textarea, select {
   .ProseMirror code { background: #f4f4f4; color: #7c3aed; }
   .ProseMirror blockquote { border-left-color: #c8a96e; background: transparent; }
 }
+
+/* ══════════════════════════════════════════════════════════
+   iOS 级打磨动效系统 v2.0
+   ══════════════════════════════════════════════════════════ */
+
+/* ── 按钮按压反馈（所有可点击元素）──────────────────────── */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-press:active {
+  transform: scale(0.96) !important;
+}
+
+/* ── 文件树展开/折叠动画 ──────────────────────────────── */
+.tree-children {
+  overflow: hidden;
+  animation: treeOpen 0.2s var(--ease-spring) both;
+  transform-origin: top;
+}
+@keyframes treeOpen {
+  from { opacity: 0; transform: scaleY(0.85) translateY(-4px); }
+  to   { opacity: 1; transform: scaleY(1) translateY(0); }
+}
+.tree-node {
+  transition: background 0.1s, padding-left 0.2s var(--ease-smooth);
+}
+.tree-node:hover { background: var(--bg-hover); }
+.tree-node:active { transform: scale(0.99); }
+
+/* ── 侧边栏切换动画 ────────────────────────────────────── */
+.sidebar-panel {
+  animation: panelSlide 0.22s var(--ease-smooth) both;
+}
+@keyframes panelSlide {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── 新建文档淡入 ──────────────────────────────────────── */
+.doc-row-new {
+  animation: docAppear 0.28s var(--ease-spring) both;
+}
+@keyframes docAppear {
+  from { opacity: 0; transform: translateX(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+/* ── 删除文档消失 ──────────────────────────────────────── */
+.doc-row-remove {
+  animation: docRemove 0.2s var(--ease-sharp) both;
+}
+@keyframes docRemove {
+  from { opacity: 1; transform: scale(1); max-height: 32px; }
+  to   { opacity: 0; transform: scale(0.95) translateX(8px); max-height: 0; padding: 0; }
+}
+
+/* ── Tab 切换过渡 ──────────────────────────────────────── */
+.tab-content {
+  animation: tabFade 0.18s var(--ease-smooth) both;
+}
+@keyframes tabFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 模态框弹出 ────────────────────────────────────────── */
+.modal-enter {
+  animation: modalIn 0.25s var(--ease-spring) both;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.93) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-overlay-enter {
+  animation: overlayIn 0.2s var(--ease-smooth) both;
+}
+@keyframes overlayIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to   { opacity: 1; backdrop-filter: blur(8px); }
+}
+
+/* ── Toast 通知 ────────────────────────────────────────── */
+.toast {
+  animation: toastIn 0.3s var(--ease-spring) both;
+}
+.toast-exit {
+  animation: toastOut 0.2s var(--ease-sharp) both;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(6px); }
+}
+
+/* ── 拖拽状态 ──────────────────────────────────────────── */
+.dragging {
+  opacity: 0.5;
+  transform: scale(0.97);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.drag-over {
+  background: rgba(200,169,110,0.08) !important;
+  border: 1px dashed rgba(200,169,110,0.4) !important;
+  border-radius: 6px;
+}
+.drag-indicator {
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  margin: 1px 8px;
+  animation: dragLine 0.15s var(--ease-smooth) both;
+}
+@keyframes dragLine {
+  from { opacity: 0; transform: scaleX(0.5); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+
+/* ── 专注模式过渡 ──────────────────────────────────────── */
+.focus-mode-enter .sidebar,
+.focus-mode-enter .statusbar,
+.focus-mode-enter .titlebar-save {
+  animation: focusHide 0.3s var(--ease-smooth) both;
+}
+@keyframes focusHide {
+  to { opacity: 0; transform: translateX(-100%); }
+}
+
+/* ── 协作光标平滑移动 ──────────────────────────────────── */
+.collab-cursor-caret {
+  transition: left 0.08s var(--ease-smooth), top 0.08s var(--ease-smooth);
+  will-change: left, top;
+}
+
+/* ── 自动保存指示器 ────────────────────────────────────── */
+.save-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  transition: opacity 0.4s var(--ease-smooth), color 0.3s;
+}
+.save-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transition: background 0.3s, transform 0.2s;
+}
+.save-dot.saving {
+  background: var(--text-tertiary);
+  animation: savePulse 0.8s ease infinite;
+}
+.save-dot.saved {
+  background: #52c97a;
+  transform: scale(1.2);
+}
+@keyframes savePulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── 工具提示（Tooltip）──────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  background: rgba(20,20,22,0.95);
+  color: #e8e6e0;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s var(--ease-spring);
+  backdrop-filter: blur(8px);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  z-index: 9999;
+}
+[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+/* ── 输入框聚焦动效 ────────────────────────────────────── */
+input:focus, textarea:focus {
+  transition: box-shadow 0.2s var(--ease-smooth), border-color 0.2s;
+}
+.form-input:focus {
+  box-shadow: 0 0 0 3px rgba(200,169,110,0.15);
+  border-color: rgba(200,169,110,0.5) !important;
+}
+
+/* ── 主题系统扩展 ──────────────────────────────────────── */
+/* Paper 极亮主题 */
+[data-theme="paper"] {
+  --bg-base: #fdfcfa;
+  --bg-surface: #ffffff;
+  --bg-surface2: #f8f7f5;
+  --bg-surface3: #f2f1ef;
+  --bg-hover: rgba(0,0,0,0.04);
+  --bg-active: rgba(200,169,110,0.1);
+  --bg-editor: #ffffff;
+  --text-primary: #1a1a18;
+  --text-secondary: #4a4a46;
+  --text-tertiary: #8a8a84;
+  --border: rgba(0,0,0,0.07);
+  --border-md: rgba(0,0,0,0.12);
+  --accent: #9a7040;
+  --color-success: #2d8a4e;
+  --color-warning: #b87520;
+}
+
+/* OLED 纯黑主题 */
+[data-theme="oled"] {
+  --bg-base: #000000;
+  --bg-surface: #050505;
+  --bg-surface2: #0a0a0a;
+  --bg-surface3: #111111;
+  --bg-hover: rgba(255,255,255,0.04);
+  --bg-active: rgba(200,169,110,0.1);
+  --bg-editor: #000000;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a0a09e;
+  --text-tertiary: #606060;
+  --border: rgba(255,255,255,0.05);
+  --border-md: rgba(255,255,255,0.08);
+  --accent: #d4b47a;
+}
+
+/* ── 全屏专注模式 ──────────────────────────────────────── */
+.focus-mode {
+  --sidebar-width: 0px;
+}
+.focus-mode .sidebar-container {
+  display: none !important;
+}
+.focus-mode .titlebar-save-area {
+  display: none !important;
+}
+.focus-mode .status-bar {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.focus-mode .status-bar:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+.focus-mode .ProseMirror {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 60px 0;
+}
+
+/* ── Typewriter 模式 ───────────────────────────────────── */
+.typewriter-mode .ProseMirror {
+  padding-bottom: 50vh !important;
+}
+
+/* ── 滚动条美化 ────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+[data-theme="paper"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
+[data-theme="paper"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
+/* ── 选区高亮增强 ──────────────────────────────────────── */
+::selection {
+  background: rgba(200,169,110,0.25);
+  color: inherit;
+}
+
+/* ── 加载骨架屏 ────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface2) 25%, var(--bg-surface3) 50%, var(--bg-surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* ── 空状态插图 ────────────────────────────────────────── */
+.empty-illustration {
+  opacity: 0.35;
+  filter: saturate(0.5);
+  transition: opacity 0.3s;
+}
+.empty-illustration:hover { opacity: 0.5; }

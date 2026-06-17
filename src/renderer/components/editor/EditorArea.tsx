@@ -24,6 +24,32 @@ export const EditorArea: React.FC = () => {
   const failedDocIds = useSelector((s: RootState) => s.documents.failedDocIds);
   const saving = useSelector((s: RootState) => s.documents.saving);
   const [mode, setMode] = useState<EditorMode>('edit');
+  const [focusMode, setFocusMode] = React.useState(false);
+  const [typewriterMode, setTypewriterMode] = React.useState(false);
+  const [collabOverride, setCollabOverride] = React.useState<boolean | null>(null);
+  const user = useSelector((s: RootState) => (s as any).auth?.user);
+  const isLocalMode = useSelector((s: RootState) => (s as any).auth?.isLocalMode);
+  const isCollabOn = collabOverride !== null ? collabOverride : (!!user && !isLocalMode);
+
+  // F11 专注模式
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F11') { e.preventDefault(); setFocusMode(v => !v); }
+      if (e.key === 'Escape' && focusMode) setFocusMode(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [focusMode]);
+
+  // 专注模式下隐藏 titlebar save area
+  React.useEffect(() => {
+    document.body.classList.toggle('focus-mode', focusMode);
+    document.body.classList.toggle('typewriter-mode', typewriterMode);
+    return () => {
+      document.body.classList.remove('focus-mode');
+      document.body.classList.remove('typewriter-mode');
+    };
+  }, [focusMode, typewriterMode]);
   // 协作模式：登录后默认开启，用户可手动关闭（null = 跟随默认）
   const user = useSelector((s: RootState) => (s as any).auth?.user);
   const isLocalMode = useSelector((s: RootState) => (s as any).auth?.isLocalMode);
@@ -118,8 +144,30 @@ export const EditorArea: React.FC = () => {
                         updatedAt={activeDoc.updatedAt}
                       />
                     </div>
-                    {/* 协作开关按钮（右下角，仅登录后显示） */}
-                    {user && !isLocalMode && (
+                    {/* 右下角工具组 */}
+                    <div style={{ position: 'absolute', bottom: 16, right: 20, zIndex: 30, display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {/* Typewriter 模式 */}
+                      <button onClick={() => setTypewriterMode(v => !v)} title="Typewriter 模式（当前行居中）"
+                        style={{ padding: '4px 9px', borderRadius: 16, border: `1px solid ${typewriterMode ? 'rgba(91,156,246,0.4)' : 'var(--border)'}`, background: typewriterMode ? 'rgba(91,156,246,0.08)' : 'var(--bg-surface2)', color: typewriterMode ? '#5b9cf6' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                        ⌨ 打字机
+                      </button>
+                      {/* 专注模式 */}
+                      <button onClick={() => setFocusMode(v => !v)} title="专注模式 (F11)"
+                        style={{ padding: '4px 9px', borderRadius: 16, border: `1px solid ${focusMode ? 'rgba(200,169,110,0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(200,169,110,0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                        ◎ 专注
+                      </button>
+                      {/* 协作开关 */}
+                      {user && !isLocalMode && (
+                        <button onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)} title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 16, fontSize: 11, border: `1px solid ${isCollabOn ? 'rgba(82,201,122,0.35)' : 'var(--border)'}`, background: isCollabOn ? 'rgba(82,201,122,0.08)' : 'var(--bg-surface2)', color: isCollabOn ? '#52c97a' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isCollabOn ? '#52c97a' : 'var(--text-tertiary)', animation: isCollabOn ? 'pulse 2s infinite' : 'none' }} />
+                          {isCollabOn ? '协作中' : '本地模式'}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 协作开关按钮（右下角，仅登录后显示） - 已合并到上方工具组 */}
+                    {false && user && !isLocalMode && (
                       <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 30 }}>
                         <button
                           onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)}

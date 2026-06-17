@@ -185,7 +185,20 @@ const DocTreeNode: React.FC<{
       <div>
         <div onClick={() => setExpanded(v => !v)}
           onContextMenu={e => { e.preventDefault(); onCtxMenu?.(e, doc); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: `4px 8px 4px ${pl}px`, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', borderRadius: 5, transition: 'background 0.1s' }}
+          draggable
+          onDragStart={e => { e.dataTransfer.setData('doc-id', doc.id); e.dataTransfer.setData('doc-type', 'folder'); (e.currentTarget as HTMLElement).style.opacity='0.5'; }}
+          onDragEnd={e => { (e.currentTarget as HTMLElement).style.opacity='1'; }}
+          onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.background='rgba(200,169,110,0.1)'; }}
+          onDragLeave={e => { (e.currentTarget as HTMLElement).style.background='transparent'; }}
+          onDrop={async e => {
+            e.preventDefault(); (e.currentTarget as HTMLElement).style.background='transparent';
+            const dragId = e.dataTransfer.getData('doc-id');
+            if (dragId && dragId !== doc.id) {
+              await ipc.invoke('documents:move', { id: dragId, parentId: doc.id });
+              onCtxMenu && onCtxMenu({ ...(e as any), type: 'refresh' } as any, doc);
+            }
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: `4px 8px 4px ${pl}px`, cursor: 'grab', fontSize: 12.5, color: 'var(--text-secondary)', borderRadius: 5, transition: 'background 0.1s' }}
           onMouseOver={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
           onMouseOut={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)', width: 10, flexShrink: 0 }}>{expanded ? '▾' : '▸'}</span>
@@ -227,7 +240,12 @@ const DocTree: React.FC<{ docs: any[]; onOpen: (d: any) => void; onNew: () => vo
     </div>
   );
   return (
-    <div style={{ padding: '4px 4px' }}>
+    <div style={{ padding: '4px 4px' }}
+      onDragOver={e => e.preventDefault()}
+      onDrop={async e => {
+        const dragId = e.dataTransfer.getData('doc-id');
+        if (dragId) await ipc.invoke('documents:move', { id: dragId, parentId: null });
+      }}>
       {roots.map(d => <DocTreeNode key={d.id} doc={d} docs={docs} depth={0} onOpen={onOpen} onCtxMenu={onCtxMenu} />)}
     </div>
   );
