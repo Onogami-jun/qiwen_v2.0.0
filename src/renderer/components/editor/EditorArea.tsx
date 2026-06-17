@@ -143,7 +143,7 @@ export const EditorArea: React.FC = () => {
                         ⌨ 打字机
                       </button>
                       {/* 专注模式 */}
-                      <button onClick={() => setFocusMode(v => !v)} title="专注模式 (F11)"
+                      <button onClick={() => dispatch(toggleFocusMode())} title="专注模式 (F11)"
                         style={{ padding: '4px 9px', borderRadius: 16, border: `1px solid ${focusMode ? 'rgba(200,169,110,0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(200,169,110,0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.15s' }}>
                         ◎ 专注
                       </button>
