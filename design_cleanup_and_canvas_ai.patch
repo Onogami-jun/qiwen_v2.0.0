@@ -1,0 +1,1140 @@
+diff --git a/src/renderer/components/auth/AuthPage.tsx b/src/renderer/components/auth/AuthPage.tsx
+index 7aec768..df0a103 100644
+--- a/src/renderer/components/auth/AuthPage.tsx
++++ b/src/renderer/components/auth/AuthPage.tsx
+@@ -202,7 +202,7 @@ export const AuthPage: React.FC<{ onOffline?: () => void }> = ({ onOffline }) =>
+             animate={{ scale: 1, opacity: 1 }}
+             transition={{ delay: 0.1, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+             style={{
+-              width: 56, height: 56, borderRadius: 16, margin: '0 auto 14px',
++              width: 56, height: 56, borderRadius: 'var(--radius-2xl)', margin: '0 auto 14px',
+               background: 'linear-gradient(145deg, #d4b47a, #7a4e20)',
+               display: 'flex', alignItems: 'center', justifyContent: 'center',
+               fontSize: 26, color: '#fff',
+diff --git a/src/renderer/components/canvas/MindMapAiEditPanel.tsx b/src/renderer/components/canvas/MindMapAiEditPanel.tsx
+new file mode 100644
+index 0000000..3f3ecaa
+--- /dev/null
++++ b/src/renderer/components/canvas/MindMapAiEditPanel.tsx
+@@ -0,0 +1,300 @@
++import React, { useState, useCallback, useRef } from 'react';
++import { diffWords } from 'diff';
++
++/**
++ * MindMapAiEditPanel —— 思维导图的对话式 AI 编辑面板。
++ *
++ * 跟 PPT 那边的 AiEditChatPanel 是同一套交互模型（先看 diff 再确认应用），
++ * 但思维导图的结构是一棵树，不是一个扁平数组，所以 diff 和 schema 都是递归的：
++ * 把 { nodes: Record<id, Node>, rootId } 转成嵌套 JSON 喂给 AI，
++ * AI 返回的也是嵌套 JSON（保留 id 的节点=保留，没 id 的=新增，原来存在但这次没出现的=删除），
++ * 解析时按 id 递归比对，重建出新的 nodes Record。
++ *
++ * 新节点不需要算坐标——MindMapView.tsx 里的 layoutTree() 本来就会在每次渲染前
++ * 根据树结构重新计算所有节点位置，这里随便给个占位坐标即可，跟现有的 addChild() 一样。
++ */
++
++const BUILTIN_KEY = 'ark-0f0fd51c-1395-45bd-9df0-29a195257d96-5ab55';
++const BUILTIN_MODEL = 'doubao-seed-2-0-pro-260215';
++const getApiKey = () => { try { return localStorage.getItem('qiwen_doubao_apikey') || BUILTIN_KEY; } catch { return BUILTIN_KEY; } };
++const getModel = () => { try { return localStorage.getItem('qiwen_doubao_model') || BUILTIN_MODEL; } catch { return BUILTIN_MODEL; } };
++
++interface MindNode {
++  id: string;
++  text: string;
++  x: number;
++  y: number;
++  color?: string;
++  children: string[];
++  collapsed?: boolean;
++}
++
++interface NestedNode {
++  id?: string;
++  text: string;
++  children?: NestedNode[];
++}
++
++interface DiffRow {
++  depth: number;
++  status: 'added' | 'removed' | 'modified' | 'unchanged';
++  oldText?: string;
++  newText?: string;
++}
++
++function toNested(nodes: Record<string, MindNode>, id: string): NestedNode {
++  const n = nodes[id];
++  return {
++    id: n.id,
++    text: n.text,
++    children: (n.children || []).map(cid => toNested(nodes, cid)),
++  };
++}
++
++export const MindMapAiEditPanel: React.FC<{
++  nodes: Record<string, MindNode>;
++  rootId: string;
++  onApply: (newNodes: Record<string, MindNode>) => void;
++  onClose: () => void;
++}> = ({ nodes, rootId, onApply, onClose }) => {
++  const [instruction, setInstruction] = useState('');
++  const [loading, setLoading] = useState(false);
++  const [error, setError] = useState('');
++  const [pendingDiff, setPendingDiff] = useState<{ instruction: string; rows: DiffRow[]; finalNodes: Record<string, MindNode> } | null>(null);
++  const [history, setHistory] = useState<{ instruction: string; status: 'applied' | 'discarded' }[]>([]);
++  const abortRef = useRef<AbortController | null>(null);
++  const uidCounter = useRef(0);
++  const newId = () => `ai_${Date.now()}_${uidCounter.current++}`;
++
++  const handleGenerate = useCallback(async () => {
++    const text = instruction.trim();
++    if (!text || loading) return;
++    setLoading(true);
++    setError('');
++    setPendingDiff(null);
++
++    const currentTree = toNested(nodes, rootId);
++
++    const systemPrompt = `你是一个思维导图编辑助手。下面会给你当前的完整思维导图结构（嵌套 JSON，每个节点有 id、text、children）和用户希望做的修改。
++
++请输出修改后的完整思维导图结构（同样的嵌套 JSON 格式），规则：
++- 保留下来的已有节点（不管文字有没有改），必须原样带上它原来的 "id" 字段
++- 新增的节点不要包含 "id" 字段
++- 不需要修改的节点，text 原样返回
++- 用户要求删除某个节点时，直接不要把它（及其所有子节点）包含在返回结果里
++- 根节点必须保留（可以改文字，但结构上必须是返回 JSON 的最顶层）
++- 只返回 JSON 本身，不要任何解释文字或代码块包裹符号
++
++当前思维导图结构：
++${JSON.stringify(currentTree, null, 2)}`;
++
++    const ctrl = new AbortController();
++    abortRef.current = ctrl;
++
++    try {
++      const api = (window as any).electronAPI;
++      if (!api?.invoke) throw new Error('请在桌面应用中使用 AI 功能');
++
++      const result: string = await api.invoke('ai:chat-stream', {
++        messages: [{ role: 'user', content: `${systemPrompt}\n\n用户的修改要求：${text}` }],
++        apiKey: getApiKey(),
++        model: getModel(),
++      });
++
++      if (ctrl.signal.aborted) return;
++      if (!result) throw new Error('AI 返回了空响应，请重试');
++
++      const jsonMatch = result.match(/\{[\s\S]*\}/);
++      if (!jsonMatch) throw new Error('AI 返回格式异常，请重试');
++      const newTree = JSON.parse(jsonMatch[0]) as NestedNode;
++
++      const rows: DiffRow[] = [];
++      const finalNodes: Record<string, MindNode> = {};
++      const usedOldIds = new Set<string>();
++
++      // 递归比对：根节点强制沿用原 rootId，避免根节点被意外当成"新节点"导致整棵树丢失关联
++      const walk = (newNode: NestedNode, depth: number, forcedId?: string) => {
++        const oldNode = forcedId ? nodes[forcedId] : (newNode.id ? nodes[newNode.id] : undefined);
++        const id = forcedId || (oldNode ? oldNode.id : newId());
++
++        if (oldNode) usedOldIds.add(oldNode.id);
++
++        const childIds: string[] = (newNode.children || []).map(child => walk(child, depth + 1));
++
++        const changed = !oldNode || oldNode.text !== newNode.text;
++        rows.push({
++          depth,
++          status: !oldNode ? 'added' : changed ? 'modified' : 'unchanged',
++          oldText: oldNode?.text,
++          newText: newNode.text,
++        });
++
++        finalNodes[id] = {
++          id,
++          text: newNode.text,
++          x: oldNode?.x ?? 0,
++          y: oldNode?.y ?? 0,
++          color: oldNode?.color,
++          children: childIds,
++          collapsed: oldNode?.collapsed,
++        };
++        return id;
++      };
++
++      walk(newTree, 0, rootId);
++
++      // 原树里没被走到的节点 = 被删除（按深度找一下原来的层级用于展示，找不到就归到顶层）
++      Object.values(nodes).forEach(n => {
++        if (!usedOldIds.has(n.id)) {
++          rows.push({ depth: 0, status: 'removed', oldText: n.text });
++        }
++      });
++
++      setPendingDiff({ instruction: text, rows, finalNodes });
++    } catch (e: any) {
++      if (e?.name === 'AbortError') return;
++      setError(e?.message || 'AI 生成修改失败，请重试');
++    } finally {
++      setLoading(false);
++      abortRef.current = null;
++    }
++  }, [instruction, loading, nodes, rootId]);
++
++  const handleApply = useCallback(() => {
++    if (!pendingDiff) return;
++    onApply(pendingDiff.finalNodes);
++    setHistory(h => [...h, { instruction: pendingDiff.instruction, status: 'applied' }]);
++    setPendingDiff(null);
++    setInstruction('');
++  }, [pendingDiff, onApply]);
++
++  const handleDiscard = useCallback(() => {
++    if (!pendingDiff) return;
++    setHistory(h => [...h, { instruction: pendingDiff.instruction, status: 'discarded' }]);
++    setPendingDiff(null);
++  }, [pendingDiff]);
++
++  const stop = useCallback(() => { abortRef.current?.abort(); setLoading(false); }, []);
++
++  const badge = (status: DiffRow['status']) => ({
++    added: ['新增', 'var(--color-success)', 'rgba(var(--color-success-rgb), 0.15)'],
++    removed: ['删除', 'var(--color-danger)', 'rgba(var(--color-danger-rgb), 0.15)'],
++    modified: ['已修改', 'var(--accent)', 'rgba(var(--accent-rgb), 0.15)'],
++    unchanged: ['不变', 'var(--text-tertiary)', 'rgba(255,255,255,0.05)'],
++  }[status]);
++
++  return (
++    <div style={{
++      position: 'fixed', top: 0, right: 0, bottom: 0, width: 360, zIndex: 200,
++      background: 'var(--bg-surface)', borderLeft: '0.5px solid var(--border-md)',
++      boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column',
++    }}>
++      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 12px', borderBottom: '0.5px solid var(--border)', flexShrink: 0 }}>
++        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>✎ AI 编辑</div>
++        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
++      </div>
++
++      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
++        {!pendingDiff && !loading && history.length === 0 && (
++          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 12.5 }}>
++            <div style={{ fontSize: 28, marginBottom: 8 }}>✎</div>
++            <div>描述你想对这张思维导图做的修改</div>
++            <div style={{ fontSize: 11, marginTop: 6, opacity: 0.7 }}>比如"给XX节点下面加3个子节点"或"把右边那枝删掉"</div>
++          </div>
++        )}
++
++        {loading && (
++          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
++            <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin .7s linear infinite' }} />
++            正在生成修改…
++            <button onClick={stop} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
++          </div>
++        )}
++
++        {error && (
++          <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 8, marginBottom: 10 }}>{error}</div>
++        )}
++
++        {pendingDiff && !loading && (
++          <div style={{ marginBottom: 12 }}>
++            <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500, marginBottom: 8 }}>
++              「{pendingDiff.instruction}」的修改预览
++            </div>
++            <div style={{ padding: '8px 10px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 9, marginBottom: 10 }}>
++              {pendingDiff.rows.map((row, i) => {
++                const b = badge(row.status);
++                return (
++                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '4px 0', paddingLeft: row.depth * 14, fontSize: 12 }}>
++                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: b[2], color: b[1], flexShrink: 0, marginTop: 1 }}>{b[0]}</span>
++                    {row.status === 'modified' ? (
++                      <span style={{ lineHeight: 1.6 }}>
++                        {diffWords(row.oldText || '', row.newText || '').map((part, j) => {
++                          if (part.added) return <span key={j} style={{ background: 'rgba(var(--color-success-rgb), 0.18)', color: 'var(--color-success)' }}>{part.value}</span>;
++                          if (part.removed) return <span key={j} style={{ background: 'rgba(var(--color-danger-rgb), 0.14)', color: 'var(--color-danger)', textDecoration: 'line-through' }}>{part.value}</span>;
++                          return <span key={j}>{part.value}</span>;
++                        })}
++                      </span>
++                    ) : (
++                      <span style={{ color: row.status === 'removed' ? 'var(--text-tertiary)' : 'var(--text-secondary)', textDecoration: row.status === 'removed' ? 'line-through' : 'none' }}>
++                        {row.status === 'removed' ? row.oldText : row.newText}
++                      </span>
++                    )}
++                  </div>
++                );
++              })}
++            </div>
++            <div style={{ display: 'flex', gap: 6 }}>
++              <button onClick={handleApply} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
++                ✓ 应用修改
++              </button>
++              <button onClick={handleGenerate} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                重新生成
++              </button>
++              <button onClick={handleDiscard} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                放弃
++              </button>
++            </div>
++          </div>
++        )}
++
++        {history.length > 0 && (
++          <div>
++            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>本次会话的修改记录</div>
++            {history.slice().reverse().map((h, i) => (
++              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 0', color: 'var(--text-secondary)' }}>
++                <span style={{
++                  fontSize: 10, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
++                  background: h.status === 'applied' ? 'rgba(var(--color-success-rgb), 0.15)' : 'rgba(255,255,255,0.06)',
++                  color: h.status === 'applied' ? 'var(--color-success)' : 'var(--text-tertiary)',
++                }}>
++                  {h.status === 'applied' ? '已应用' : '已放弃'}
++                </span>
++                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.instruction}</span>
++              </div>
++            ))}
++          </div>
++        )}
++      </div>
++
++      <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--border)', flexShrink: 0 }}>
++        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
++          <textarea
++            value={instruction}
++            onChange={e => setInstruction(e.target.value)}
++            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
++            disabled={loading}
++            placeholder="描述要做的修改... (Enter 发送)"
++            rows={2}
++            style={{ flex: 1, padding: '8px 10px', borderRadius: 9, background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none', lineHeight: 1.5 }}
++          />
++          <button onClick={handleGenerate} disabled={!instruction.trim() || loading}
++            style={{ width: 34, height: 34, borderRadius: 9, border: 'none', flexShrink: 0, background: instruction.trim() && !loading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: instruction.trim() && !loading ? '#fff' : 'var(--text-tertiary)', cursor: instruction.trim() && !loading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
++            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++};
++
++export default MindMapAiEditPanel;
+diff --git a/src/renderer/components/canvas/MindMapView.tsx b/src/renderer/components/canvas/MindMapView.tsx
+index 811ff52..7cc2219 100644
+--- a/src/renderer/components/canvas/MindMapView.tsx
++++ b/src/renderer/components/canvas/MindMapView.tsx
+@@ -6,6 +6,7 @@ import { createDocument, updateDocument } from '../../store/slices/documentsSlic
+ import { openTab, setView } from '../../store/slices/appSlice';
+ import { createPresentation, saveAllSlides } from '../../store/slices/presentationsSlice';
+ import { RootState } from '../../store';
++import { MindMapAiEditPanel } from './MindMapAiEditPanel';
+ 
+ 
+ 
+@@ -86,6 +87,7 @@ const MindMapEditor: React.FC<{ canvasId: string; title: string; onBack: () => v
+   const [selectedId, setSelectedId] = useState<string | null>(null);
+   const [editingId, setEditingId] = useState<string | null>(null);
+   const [editVal, setEditVal] = useState('');
++  const [showAiEdit, setShowAiEdit] = useState(false);
+   const svgRef = useRef<SVGSVGElement>(null);
+   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const panRef = useRef<{ x: number; y: number } | null>(null);
+@@ -266,6 +268,7 @@ const MindMapEditor: React.FC<{ canvasId: string; title: string; onBack: () => v
+         <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', background: 'var(--bg-surface3)', padding: '3px 10px', borderRadius: 'var(--radius-md)' }}>Tab 添加子节点 · Enter 添加兄弟 · Del 删除 · 双击编辑</span>
+         <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{Math.round(vp.zoom * 100)}%</span>
+         <button onClick={resetView} style={{ padding: '4px 10px', height: 28, border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>重置视图</button>
++        <button onClick={() => setShowAiEdit(v => !v)} style={{ padding: '4px 10px', height: 28, border: `0.5px solid ${showAiEdit ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', background: showAiEdit ? 'rgba(var(--accent-rgb), 0.1)' : 'transparent', color: showAiEdit ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>✎ AI 编辑</button>
+         {selectedId && selectedId !== map.rootId && (
+           <button onClick={() => deleteNode(selectedId)} style={{ padding: '4px 10px', height: 28, border: '0.5px solid rgba(255,100,100,0.35)', borderRadius: 'var(--radius-md)', background: 'rgba(255,100,100,0.08)', color: '#ff6b6b', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>删除节点</button>
+         )}
+@@ -328,6 +331,15 @@ const MindMapEditor: React.FC<{ canvasId: string; title: string; onBack: () => v
+           滚轮缩放 · Alt + 拖拽平移
+         </div>
+       </div>
++
++      {showAiEdit && (
++        <MindMapAiEditPanel
++          nodes={map.nodes}
++          rootId={map.rootId}
++          onApply={(newNodes) => update(newNodes)}
++          onClose={() => setShowAiEdit(false)}
++        />
++      )}
+     </div>
+   );
+ };
+@@ -445,7 +457,7 @@ export const MindMapView: React.FC = () => {
+       {/* New modal */}
+       {showNew && (
+         <div onClick={() => setShowNew(false)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+-          <div onClick={e => e.stopPropagation()} style={{ width: 360, background: 'var(--bg-surface)', border: '0.5px solid var(--border-md)', borderRadius: 16, padding: '24px', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
++          <div onClick={e => e.stopPropagation()} style={{ width: 360, background: 'var(--bg-surface)', border: '0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', padding: '24px', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>新建思维导图</div>
+             <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginBottom: 18 }}>输入主题，开始梳理你的想法</div>
+             <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+diff --git a/src/renderer/components/canvas/WhiteboardAiEditPanel.tsx b/src/renderer/components/canvas/WhiteboardAiEditPanel.tsx
+new file mode 100644
+index 0000000..5041a73
+--- /dev/null
++++ b/src/renderer/components/canvas/WhiteboardAiEditPanel.tsx
+@@ -0,0 +1,303 @@
++import React, { useState, useCallback, useRef } from 'react';
++import { diffWords } from 'diff';
++
++/**
++ * WhiteboardAiEditPanel —— 白板的对话式 AI 编辑面板。
++ *
++ * 跟 PPT/思维导图那两个不一样的地方：白板里的"path"元素是手绘笔迹（一串坐标点），
++ * 没有语义内容，AI 没法、也不应该去"理解"或"修改"一条手画的线——所以这个面板
++ * 只把 text / rect / ellipse / arrow 这几种有结构、有意义的元素喂给 AI，
++ * 手绘笔迹永远原样保留，完全不出现在 AI 看到的上下文里，也不会被 AI 的结果覆盖掉。
++ *
++ * 适合的场景是"用方框和箭头画一个流程图""加一个标题文字"这类有结构的内容，
++ * 不是用来让 AI 帮你画画的。
++ */
++
++const BUILTIN_KEY = 'ark-0f0fd51c-1395-45bd-9df0-29a195257d96-5ab55';
++const BUILTIN_MODEL = 'doubao-seed-2-0-pro-260215';
++const getApiKey = () => { try { return localStorage.getItem('qiwen_doubao_apikey') || BUILTIN_KEY; } catch { return BUILTIN_KEY; } };
++const getModel = () => { try { return localStorage.getItem('qiwen_doubao_model') || BUILTIN_MODEL; } catch { return BUILTIN_MODEL; } };
++
++interface Pt { x: number; y: number; }
++interface BaseEl { id: string; color: string; sw: number; }
++interface PathEl extends BaseEl { type: 'path'; pts: Pt[]; }
++interface RectEl extends BaseEl { type: 'rect'; x: number; y: number; w: number; h: number; fill: string; }
++interface EllEl extends BaseEl { type: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fill: string; }
++interface ArrowEl extends BaseEl { type: 'arrow'; x1: number; y1: number; x2: number; y2: number; }
++interface TextEl extends BaseEl { type: 'text'; x: number; y: number; text: string; fs: number; }
++type El = PathEl | RectEl | EllEl | ArrowEl | TextEl;
++type EditableEl = RectEl | EllEl | ArrowEl | TextEl;
++
++const uid = () => Math.random().toString(36).slice(2, 10);
++
++interface DiffEntry {
++  status: 'added' | 'removed' | 'modified' | 'unchanged';
++  oldEl?: EditableEl;
++  newEl?: any;
++}
++
++function summarize(el?: any): string {
++  if (!el) return '(空)';
++  if (el.type === 'text') return el.text || '(空文字)';
++  if (el.type === 'rect') return `矩形 ${Math.round(el.w || 0)}×${Math.round(el.h || 0)}`;
++  if (el.type === 'ellipse') return `椭圆`;
++  if (el.type === 'arrow') return `箭头`;
++  return el.type || '(未知)';
++}
++
++export const WhiteboardAiEditPanel: React.FC<{
++  elements: El[];
++  onApply: (newElements: El[]) => void;
++  onClose: () => void;
++}> = ({ elements, onApply, onClose }) => {
++  const [instruction, setInstruction] = useState('');
++  const [loading, setLoading] = useState(false);
++  const [error, setError] = useState('');
++  const [pendingDiff, setPendingDiff] = useState<{ instruction: string; entries: DiffEntry[]; finalElements: El[] } | null>(null);
++  const [history, setHistory] = useState<{ instruction: string; status: 'applied' | 'discarded' }[]>([]);
++  const abortRef = useRef<AbortController | null>(null);
++
++  const handleGenerate = useCallback(async () => {
++    const text = instruction.trim();
++    if (!text || loading) return;
++    setLoading(true);
++    setError('');
++    setPendingDiff(null);
++
++    const pathEls = elements.filter(e => e.type === 'path') as PathEl[];
++    const editableEls = elements.filter(e => e.type !== 'path') as EditableEl[];
++
++    // 给 AI 一个大致的"当前画面范围"，新增元素时别全堆在 (0,0)
++    const xs = editableEls.flatMap((e: any) => [e.x, e.x1, e.x2, e.cx].filter((v) => typeof v === 'number'));
++    const ys = editableEls.flatMap((e: any) => [e.y, e.y1, e.y2, e.cy].filter((v) => typeof v === 'number'));
++    const bounds = xs.length ? `当前内容大致分布在 x: ${Math.min(...xs)}~${Math.max(...xs)}, y: ${Math.min(...ys)}~${Math.max(...ys)}（像素坐标），新增内容请放在这个范围附近，避免完全重叠。` : '画面目前是空的，新增内容可以放在 x:100~700, y:100~500 这个范围内。';
++
++    const currentJson = editableEls.map(e => {
++      const { id, type, color } = e;
++      if (type === 'text') return { id, type, x: e.x, y: e.y, text: e.text, fs: e.fs, color };
++      if (type === 'rect') return { id, type, x: e.x, y: e.y, w: e.w, h: e.h, color, fill: e.fill };
++      if (type === 'ellipse') return { id, type, cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry, color, fill: e.fill };
++      return { id, type, x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2, color };
++    });
++
++    const systemPrompt = `你是一个白板编辑助手。下面会给你白板上当前的文字和图形元素（JSON 数组，不包含手绘笔迹）和用户希望做的修改。
++
++请输出修改后的完整元素 JSON 数组，规则：
++- 保留下来的已有元素（不管有没有修改），必须原样带上它原来的 "id" 字段
++- 新增的元素不要包含 "id" 字段
++- 用户要求删除某个元素时，直接不要把它包含在返回结果里
++- type 只能是: text, rect, ellipse, arrow
++- text 元素字段: x, y, text, fs(字号,默认16), color
++- rect 元素字段: x, y, w, h, color, fill(填充色,留空或"transparent"表示不填充)
++- ellipse 元素字段: cx, cy, rx, ry, color, fill
++- arrow 元素字段: x1, y1, x2, y2, color（箭头从起点指向终点）
++- color 用十六进制颜色，没有特别要求就用 "#e8e5de"（浅色，适配深色背景）
++- ${bounds}
++- 只返回 JSON 数组本身，不要任何解释文字或代码块包裹符号
++
++当前元素：
++${JSON.stringify(currentJson, null, 2)}`;
++
++    const ctrl = new AbortController();
++    abortRef.current = ctrl;
++
++    try {
++      const api = (window as any).electronAPI;
++      if (!api?.invoke) throw new Error('请在桌面应用中使用 AI 功能');
++
++      const result: string = await api.invoke('ai:chat-stream', {
++        messages: [{ role: 'user', content: `${systemPrompt}\n\n用户的修改要求：${text}` }],
++        apiKey: getApiKey(),
++        model: getModel(),
++      });
++
++      if (ctrl.signal.aborted) return;
++      if (!result) throw new Error('AI 返回了空响应，请重试');
++
++      const jsonMatch = result.match(/\[[\s\S]*\]/);
++      if (!jsonMatch) throw new Error('AI 返回格式异常，请重试');
++      const raw = JSON.parse(jsonMatch[0]) as any[];
++
++      const oldById = new Map(editableEls.map(e => [e.id, e]));
++      const usedOldIds = new Set<string>();
++      const entries: DiffEntry[] = [];
++      const finalEditable: EditableEl[] = [];
++
++      raw.forEach(item => {
++        const oldEl = item.id ? oldById.get(item.id) : undefined;
++        const sw = oldEl?.sw ?? 2;
++        const color = item.color || oldEl?.color || '#e8e5de';
++
++        let built: EditableEl;
++        if (item.type === 'text') built = { id: oldEl?.id || uid(), type: 'text', x: item.x ?? 100, y: item.y ?? 100, text: item.text ?? '', fs: item.fs ?? 16, color, sw } as TextEl;
++        else if (item.type === 'rect') built = { id: oldEl?.id || uid(), type: 'rect', x: item.x ?? 100, y: item.y ?? 100, w: item.w ?? 160, h: item.h ?? 80, color, sw, fill: item.fill || 'transparent' } as RectEl;
++        else if (item.type === 'ellipse') built = { id: oldEl?.id || uid(), type: 'ellipse', cx: item.cx ?? 200, cy: item.cy ?? 200, rx: item.rx ?? 80, ry: item.ry ?? 50, color, sw, fill: item.fill || 'transparent' } as EllEl;
++        else built = { id: oldEl?.id || uid(), type: 'arrow', x1: item.x1 ?? 100, y1: item.y1 ?? 100, x2: item.x2 ?? 300, y2: item.y2 ?? 100, color, sw } as ArrowEl;
++
++        if (oldEl) {
++          usedOldIds.add(oldEl.id);
++          const changed = JSON.stringify(oldEl) !== JSON.stringify(built);
++          entries.push({ status: changed ? 'modified' : 'unchanged', oldEl, newEl: built });
++        } else {
++          entries.push({ status: 'added', newEl: built });
++        }
++        finalEditable.push(built);
++      });
++
++      editableEls.forEach(e => { if (!usedOldIds.has(e.id)) entries.push({ status: 'removed', oldEl: e }); });
++
++      const finalElements: El[] = [...pathEls, ...finalEditable];
++      setPendingDiff({ instruction: text, entries, finalElements });
++    } catch (e: any) {
++      if (e?.name === 'AbortError') return;
++      setError(e?.message || 'AI 生成修改失败，请重试');
++    } finally {
++      setLoading(false);
++      abortRef.current = null;
++    }
++  }, [instruction, loading, elements]);
++
++  const handleApply = useCallback(() => {
++    if (!pendingDiff) return;
++    onApply(pendingDiff.finalElements);
++    setHistory(h => [...h, { instruction: pendingDiff.instruction, status: 'applied' }]);
++    setPendingDiff(null);
++    setInstruction('');
++  }, [pendingDiff, onApply]);
++
++  const handleDiscard = useCallback(() => {
++    if (!pendingDiff) return;
++    setHistory(h => [...h, { instruction: pendingDiff.instruction, status: 'discarded' }]);
++    setPendingDiff(null);
++  }, [pendingDiff]);
++
++  const stop = useCallback(() => { abortRef.current?.abort(); setLoading(false); }, []);
++
++  const badge = (status: DiffEntry['status']) => ({
++    added: ['新增', 'var(--color-success)', 'rgba(var(--color-success-rgb), 0.15)'],
++    removed: ['删除', 'var(--color-danger)', 'rgba(var(--color-danger-rgb), 0.15)'],
++    modified: ['已修改', 'var(--accent)', 'rgba(var(--accent-rgb), 0.15)'],
++    unchanged: ['不变', 'var(--text-tertiary)', 'rgba(255,255,255,0.05)'],
++  }[status]);
++
++  return (
++    <div style={{
++      position: 'fixed', top: 0, right: 0, bottom: 0, width: 360, zIndex: 200,
++      background: 'var(--bg-surface)', borderLeft: '0.5px solid var(--border-md)',
++      boxShadow: 'var(--shadow-xl)', display: 'flex', flexDirection: 'column',
++    }}>
++      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 12px', borderBottom: '0.5px solid var(--border)', flexShrink: 0 }}>
++        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>✎ AI 编辑</div>
++        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
++      </div>
++
++      <div style={{ padding: '8px 12px 0', fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0, lineHeight: 1.6 }}>
++        只对文字和图形（矩形/椭圆/箭头）生效，手绘笔迹不受影响
++      </div>
++
++      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
++        {!pendingDiff && !loading && history.length === 0 && (
++          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 12.5 }}>
++            <div style={{ fontSize: 28, marginBottom: 8 }}>✎</div>
++            <div>描述你想在白板上做的修改</div>
++            <div style={{ fontSize: 11, marginTop: 6, opacity: 0.7 }}>比如"用三个方框和箭头画一个登录流程"</div>
++          </div>
++        )}
++
++        {loading && (
++          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
++            <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin .7s linear infinite' }} />
++            正在生成修改…
++            <button onClick={stop} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
++          </div>
++        )}
++
++        {error && (
++          <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 8, marginBottom: 10 }}>{error}</div>
++        )}
++
++        {pendingDiff && !loading && (
++          <div style={{ marginBottom: 12 }}>
++            <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500, marginBottom: 8 }}>
++              「{pendingDiff.instruction}」的修改预览
++            </div>
++            {pendingDiff.entries.filter(e => e.status !== 'unchanged').map((entry, i) => {
++              const b = badge(entry.status);
++              return (
++                <div key={i} style={{ padding: '8px 10px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 9, marginBottom: 6 }}>
++                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: entry.status === 'modified' && entry.oldEl?.type === 'text' ? 6 : 0 }}>
++                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: b[2], color: b[1], flexShrink: 0 }}>{b[0]}</span>
++                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
++                      {entry.status === 'removed' ? summarize(entry.oldEl) : summarize(entry.newEl)}
++                    </span>
++                  </div>
++                  {entry.status === 'modified' && entry.oldEl?.type === 'text' && entry.newEl?.type === 'text' && entry.oldEl.text !== entry.newEl.text && (
++                    <div style={{ fontSize: 12, lineHeight: 1.7 }}>
++                      {diffWords(entry.oldEl.text || '', entry.newEl.text || '').map((part, j) => {
++                        if (part.added) return <span key={j} style={{ background: 'rgba(var(--color-success-rgb), 0.18)', color: 'var(--color-success)' }}>{part.value}</span>;
++                        if (part.removed) return <span key={j} style={{ background: 'rgba(var(--color-danger-rgb), 0.14)', color: 'var(--color-danger)', textDecoration: 'line-through' }}>{part.value}</span>;
++                        return <span key={j}>{part.value}</span>;
++                      })}
++                    </div>
++                  )}
++                </div>
++              );
++            })}
++            {pendingDiff.entries.every(e => e.status === 'unchanged') && (
++              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>这次没有实质性改动</div>
++            )}
++            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
++              <button onClick={handleApply} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
++                ✓ 应用修改
++              </button>
++              <button onClick={handleGenerate} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                重新生成
++              </button>
++              <button onClick={handleDiscard} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                放弃
++              </button>
++            </div>
++          </div>
++        )}
++
++        {history.length > 0 && (
++          <div>
++            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>本次会话的修改记录</div>
++            {history.slice().reverse().map((h, i) => (
++              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 0', color: 'var(--text-secondary)' }}>
++                <span style={{
++                  fontSize: 10, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
++                  background: h.status === 'applied' ? 'rgba(var(--color-success-rgb), 0.15)' : 'rgba(255,255,255,0.06)',
++                  color: h.status === 'applied' ? 'var(--color-success)' : 'var(--text-tertiary)',
++                }}>
++                  {h.status === 'applied' ? '已应用' : '已放弃'}
++                </span>
++                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.instruction}</span>
++              </div>
++            ))}
++          </div>
++        )}
++      </div>
++
++      <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--border)', flexShrink: 0 }}>
++        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
++          <textarea
++            value={instruction}
++            onChange={e => setInstruction(e.target.value)}
++            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
++            disabled={loading}
++            placeholder="描述要做的修改... (Enter 发送)"
++            rows={2}
++            style={{ flex: 1, padding: '8px 10px', borderRadius: 9, background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none', lineHeight: 1.5 }}
++          />
++          <button onClick={handleGenerate} disabled={!instruction.trim() || loading}
++            style={{ width: 34, height: 34, borderRadius: 9, border: 'none', flexShrink: 0, background: instruction.trim() && !loading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: instruction.trim() && !loading ? '#fff' : 'var(--text-tertiary)', cursor: instruction.trim() && !loading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
++            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++};
++
++export default WhiteboardAiEditPanel;
+diff --git a/src/renderer/components/canvas/WhiteboardView.tsx b/src/renderer/components/canvas/WhiteboardView.tsx
+index 5961bd6..74a8207 100644
+--- a/src/renderer/components/canvas/WhiteboardView.tsx
++++ b/src/renderer/components/canvas/WhiteboardView.tsx
+@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
+ import { useSelector } from 'react-redux';
+ import { ipc } from '../../utils/ipc';
+ import { RootState } from '../../store';
++import { WhiteboardAiEditPanel } from './WhiteboardAiEditPanel';
+ 
+ 
+ 
+@@ -33,6 +34,7 @@ const BoardEditor: React.FC<{ canvasId: string; title: string; onBack: () => voi
+   const [cur, setCur] = useState<El | null>(null);
+   const [sel, setSel] = useState<string | null>(null);
+   const [editId, setEditId] = useState<string | null>(null);
++  const [showAiEdit, setShowAiEdit] = useState(false);
+   const svgRef = useRef<SVGSVGElement>(null);
+   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const panRef = useRef<Pt | null>(null);
+@@ -213,6 +215,7 @@ const BoardEditor: React.FC<{ canvasId: string; title: string; onBack: () => voi
+ 
+         <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>{Math.round(vp.zoom * 100)}%</span>
+         <button onClick={() => { const nv = { x: 0, y: 0, zoom: 1 }; setVp(nv); save(els, nv); }} style={{ padding: '3px 8px', height: 26, border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit', flexShrink: 0 }}>重置</button>
++        <button onClick={() => setShowAiEdit(v => !v)} style={{ padding: '3px 8px', height: 26, border: `0.5px solid ${showAiEdit ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, borderRadius: 'var(--radius-md)', background: showAiEdit ? 'rgba(var(--accent-rgb), 0.1)' : 'transparent', color: showAiEdit ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit', flexShrink: 0 }}>✎ AI 编辑</button>
+         {sel && <button onClick={() => { upd(els.filter(e => e.id !== sel)); setSel(null); }} style={{ padding: '3px 8px', height: 26, border: '0.5px solid rgba(255,100,100,0.3)', borderRadius: 'var(--radius-md)', background: 'rgba(255,100,100,0.08)', color: '#ff6b6b', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit', flexShrink: 0 }}>删除</button>}
+         <button onClick={() => { upd([]); }} style={{ padding: '3px 8px', height: 26, border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit', flexShrink: 0 }}>清空</button>
+       </div>
+@@ -236,6 +239,14 @@ const BoardEditor: React.FC<{ canvasId: string; title: string; onBack: () => voi
+           滚轮缩放 · Alt + 拖拽平移 · Del 删除选中 · Ctrl+Z 撤销
+         </div>
+       </div>
++
++      {showAiEdit && (
++        <WhiteboardAiEditPanel
++          elements={els}
++          onApply={(newEls) => upd(newEls)}
++          onClose={() => setShowAiEdit(false)}
++        />
++      )}
+     </div>
+   );
+ };
+@@ -349,7 +360,7 @@ export const WhiteboardView: React.FC = () => {
+       {/* New modal */}
+       {showNew && (
+         <div onClick={() => setShowNew(false)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+-          <div onClick={e => e.stopPropagation()} style={{ width: 360, background: 'var(--bg-surface)', border: '0.5px solid var(--border-md)', borderRadius: 16, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
++          <div onClick={e => e.stopPropagation()} style={{ width: 360, background: 'var(--bg-surface)', border: '0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>新建白板</div>
+             <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginBottom: 18 }}>自由绘制，记录你的灵感</div>
+             <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+diff --git a/src/renderer/components/editor/EditorArea.tsx b/src/renderer/components/editor/EditorArea.tsx
+index c4633de..96a9cfc 100644
+--- a/src/renderer/components/editor/EditorArea.tsx
++++ b/src/renderer/components/editor/EditorArea.tsx
+@@ -139,18 +139,18 @@ export const EditorArea: React.FC = () => {
+                     <div style={{ position: 'absolute', bottom: 16, right: 20, zIndex: 30, display: 'flex', gap: 8, alignItems: 'center' }}>
+                       {/* Typewriter 模式 */}
+                       <button onClick={() => setTypewriterMode(v => !v)} title="Typewriter 模式（当前行居中）"
+-                        style={{ padding: '4px 9px', borderRadius: 16, border: `1px solid ${typewriterMode ? 'rgba(var(--color-info-rgb), 0.4)' : 'var(--border)'}`, background: typewriterMode ? 'rgba(var(--color-info-rgb), 0.08)' : 'var(--bg-surface2)', color: typewriterMode ? 'var(--color-info)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
++                        style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${typewriterMode ? 'rgba(var(--color-info-rgb), 0.4)' : 'var(--border)'}`, background: typewriterMode ? 'rgba(var(--color-info-rgb), 0.08)' : 'var(--bg-surface2)', color: typewriterMode ? 'var(--color-info)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
+                         ⌨ 打字机
+                       </button>
+                       {/* 专注模式 */}
+                       <button onClick={() => dispatch(toggleFocusMode())} title="专注模式 (F11)"
+-                        style={{ padding: '4px 9px', borderRadius: 16, border: `1px solid ${focusMode ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
++                        style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${focusMode ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
+                         ◎ 专注
+                       </button>
+                       {/* 协作开关 */}
+                       {user && !isLocalMode && (
+                         <button onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)} title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
+-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 16, fontSize: 11, border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`, background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)', color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'inherit', transition: 'background var(--dur-base) var(--ease-smooth), border-color var(--dur-base) var(--ease-smooth), color var(--dur-base) var(--ease-smooth)' }}>
++                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-2xl)', fontSize: 11, border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`, background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)', color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'inherit', transition: 'background var(--dur-base) var(--ease-smooth), border-color var(--dur-base) var(--ease-smooth), color var(--dur-base) var(--ease-smooth)' }}>
+                           <div style={{ width: 6, height: 6, borderRadius: '50%', background: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', animation: isCollabOn ? 'pulse 2s infinite' : 'none' }} />
+                           {isCollabOn ? '协作中' : '本地模式'}
+                         </button>
+@@ -165,7 +165,7 @@ export const EditorArea: React.FC = () => {
+                           title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
+                           style={{
+                             display: 'flex', alignItems: 'center', gap: 6,
+-                            padding: '5px 11px', borderRadius: 20, fontSize: 11.5,
++                            padding: '5px 11px', borderRadius: 'var(--radius-2xl)', fontSize: 11.5,
+                             border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`,
+                             background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)',
+                             color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)',
+@@ -265,7 +265,7 @@ const EmptyEditor: React.FC = () => {
+         transition={{ delay: 0.1, duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
+         style={{ width: 64, height: 64,
+           background: 'linear-gradient(135deg, var(--accent), #8b7355)',
+-          borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
++          borderRadius: 'var(--radius-2xl)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+           fontSize: 32, color: '#fff', fontFamily: 'var(--font-serif)', marginBottom: 24 }}
+       >文</motion.div>
+ 
+diff --git a/src/renderer/components/editor/EditorToolbar.tsx b/src/renderer/components/editor/EditorToolbar.tsx
+index c4695e2..89e2361 100644
+--- a/src/renderer/components/editor/EditorToolbar.tsx
++++ b/src/renderer/components/editor/EditorToolbar.tsx
+@@ -26,7 +26,7 @@ const InlineDialog: React.FC<{
+   return (
+     <div style={{ position:'fixed', inset:0, zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)' }}
+       onClick={e => { if (e.target===e.currentTarget) onCancel(); }}>
+-      <div style={{ background:'var(--bg-surface2)', border:'0.5px solid var(--border-md)', borderRadius:16, padding:28, width:380, boxShadow:'0 32px 80px rgba(0,0,0,0.6)' }}>
++      <div style={{ background:'var(--bg-surface2)', border:'0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', padding:28, width:380, boxShadow:'0 32px 80px rgba(0,0,0,0.6)' }}>
+         <div style={{ fontSize:15, fontWeight:500, color:'var(--text-primary)', marginBottom:20 }}>{title}</div>
+         {fields.map((f, i) => (
+           <div key={f.key} style={{ marginBottom:14 }}>
+@@ -980,7 +980,7 @@ ${text}`,
+         {/* 保存状态 */}
+         <div style={{
+           display:'flex', alignItems:'center', gap:5, padding:'4px 10px',
+-          borderRadius:20, marginLeft:6, flexShrink:0,
++          borderRadius: 'var(--radius-2xl)', marginLeft:6, flexShrink:0,
+           background:isSaving?'rgba(74,158,255,0.08)':'rgba(var(--color-success-rgb), 0.06)',
+           border:`0.5px solid ${isSaving?'rgba(74,158,255,0.2)':'rgba(var(--color-success-rgb), 0.15)'}`,
+           fontSize:11.5, color:isSaving?'#7ab8e8':'rgba(var(--color-success-rgb), 0.8)',
+diff --git a/src/renderer/components/editor/ExportDialog.tsx b/src/renderer/components/editor/ExportDialog.tsx
+index 6788f04..0463b8c 100644
+--- a/src/renderer/components/editor/ExportDialog.tsx
++++ b/src/renderer/components/editor/ExportDialog.tsx
+@@ -297,7 +297,7 @@ ${html}
+         width: 520, maxHeight: '88vh',
+         background: 'var(--bg-surface)',
+         border: '0.5px solid var(--border-md)',
+-        borderRadius: 20,
++        borderRadius: 'var(--radius-2xl)',
+         boxShadow: '0 32px 80px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(var(--accent-rgb), 0.08)',
+         display: 'flex', flexDirection: 'column', overflow: 'hidden',
+         transform: mounted ? 'scale(1) translateY(0)' : 'scale(0.96) translateY(12px)',
+diff --git a/src/renderer/components/editor/MarkdownEditor.tsx b/src/renderer/components/editor/MarkdownEditor.tsx
+index cf176d8..6b56aff 100644
+--- a/src/renderer/components/editor/MarkdownEditor.tsx
++++ b/src/renderer/components/editor/MarkdownEditor.tsx
+@@ -647,7 +647,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
+           <div style={{
+             position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+             display: 'flex', alignItems: 'center', gap: 8,
+-            padding: '6px 14px', borderRadius: 20, zIndex: 50,
++            padding: '6px 14px', borderRadius: 'var(--radius-2xl)', zIndex: 50,
+             background: 'rgba(20,18,30,0.92)', backdropFilter: 'blur(12px)',
+             border: '0.5px solid rgba(var(--accent-rgb), 0.3)',
+             boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+diff --git a/src/renderer/components/modals/SearchModal.tsx b/src/renderer/components/modals/SearchModal.tsx
+index 538d957..f80d7ad 100644
+--- a/src/renderer/components/modals/SearchModal.tsx
++++ b/src/renderer/components/modals/SearchModal.tsx
+@@ -188,7 +188,7 @@ export const SearchModal: React.FC = () => {
+               position: 'fixed', top: 140,
+               left: '50%', transform: 'translateX(-50%)',
+               width: 620, background: 'var(--bg-surface)',
+-              border: '0.5px solid var(--border-md)', borderRadius: 16, overflow: 'hidden',
++              border: '0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', overflow: 'hidden',
+               boxShadow: '0 32px 96px rgba(0,0,0,0.65)', zIndex: 501,
+             }}
+           >
+diff --git a/src/renderer/components/onboarding/OnboardingPage.tsx b/src/renderer/components/onboarding/OnboardingPage.tsx
+index fcaf69d..44c6030 100644
+--- a/src/renderer/components/onboarding/OnboardingPage.tsx
++++ b/src/renderer/components/onboarding/OnboardingPage.tsx
+@@ -165,7 +165,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
+       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 28 }}>
+         {['📝 Markdown 编辑', '🔒 本地数据', '🤖 AI 助手', '🔬 科研管理'].map(f => (
+           <span key={f} style={{
+-            padding: '5px 12px', borderRadius: 20, fontSize: 12,
++            padding: '5px 12px', borderRadius: 'var(--radius-2xl)', fontSize: 12,
+             background: C.goldBg, color: C.gold,
+             border: `1px solid rgba(180,130,60,0.2)`,
+             fontWeight: 500,
+@@ -219,7 +219,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
+     // Step 2 — Workspace name
+     <div key="workspace" style={{ textAlign: 'center' }}>
+       <div style={{
+-        width: 64, height: 64, borderRadius: 18, margin: '0 auto 24px',
++        width: 64, height: 64, borderRadius: 'var(--radius-2xl)', margin: '0 auto 24px',
+         background: C.goldBg, border: `1px solid rgba(180,130,60,0.2)`,
+         display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30,
+       }}>
+@@ -318,7 +318,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
+   return (
+     <div style={{
+       background: C.bg,
+-      borderRadius: 20,
++      borderRadius: 'var(--radius-2xl)',
+       padding: '36px 40px 32px',
+       minHeight: 520,
+       display: 'flex',
+diff --git a/src/renderer/components/org/CreateOrgModal.tsx b/src/renderer/components/org/CreateOrgModal.tsx
+index aff2f60..b0ed63a 100644
+--- a/src/renderer/components/org/CreateOrgModal.tsx
++++ b/src/renderer/components/org/CreateOrgModal.tsx
+@@ -79,7 +79,7 @@ export const CreateOrgModal: React.FC<Props> = ({ onCreated, onCancel }) => {
+ 
+   return (
+     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+-      <div style={{ width: 480, background: 'var(--bg-surface)', borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
++      <div style={{ width: 480, background: 'var(--bg-surface)', borderRadius: 'var(--radius-2xl)', border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+         {/* 进度条 */}
+         <div style={{ height: 3, background: 'var(--bg-surface2)' }}>
+           <div style={{ height: '100%', background: 'var(--accent)', width: step === 'info' ? '33%' : step === 'invite' ? '66%' : '100%', transition: 'width 0.3s var(--ease-smooth)' }} />
+diff --git a/src/renderer/components/settings/SettingsView.tsx b/src/renderer/components/settings/SettingsView.tsx
+index d68a757..e1e2055 100644
+--- a/src/renderer/components/settings/SettingsView.tsx
++++ b/src/renderer/components/settings/SettingsView.tsx
+@@ -33,7 +33,7 @@ const Row: React.FC<{ label: string; desc?: string; children: React.ReactNode }>
+ 
+ const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ value, onChange, disabled }) => (
+   <button onClick={() => !disabled && onChange(!value)} style={{ width: 40, height: 22, borderRadius: 'var(--radius-lg)', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', background: value ? 'linear-gradient(135deg, var(--accent), #9a7040)' : 'var(--bg-surface3)', position: 'relative', transition: 'background var(--dur-base) var(--ease-smooth)', opacity: disabled ? 0.5 : 1 }}>
+-    <div style={{ position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left var(--dur-base) var(--ease-smooth)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
++    <div style={{ position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left var(--dur-base) var(--ease-smooth)', boxShadow: 'var(--shadow-sm)' }} />
+   </button>
+ );
+ 
+@@ -360,7 +360,7 @@ export const SettingsView: React.FC = () => {
+           }} onClick={() => setShowOnboarding(false)}>
+             <div onClick={e => e.stopPropagation()} style={{
+               width: 640, maxHeight: '85vh', overflowY: 'auto',
+-              borderRadius: 18, boxShadow: '0 32px 80px rgba(0,0,0,0.5)',
++              borderRadius: 'var(--radius-2xl)', boxShadow: '0 32px 80px rgba(0,0,0,0.5)',
+             }}>
+               <OnboardingPage onComplete={() => setShowOnboarding(false)} />
+             </div>
+@@ -420,9 +420,9 @@ export const SettingsView: React.FC = () => {
+             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 4 }}>版本 1.2.0</div>
+             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 20 }}>本地优先的知识管理与写作平台</div>
+             <div style={{ display: 'inline-flex', gap: 8 }}>
+-              <a href="https://bitwool.cn/qiwen.html" target="_blank" rel="noreferrer" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 20, fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>官方网站</a>
+-              <a href="https://github.com/qiwen-studio/qiwen" target="_blank" rel="noreferrer" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 20, fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>GitHub</a>
+-              <a href="mailto:bitwool@163.com" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 20, fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>反馈</a>
++              <a href="https://bitwool.cn/qiwen.html" target="_blank" rel="noreferrer" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-2xl)', fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>官方网站</a>
++              <a href="https://github.com/qiwen-studio/qiwen" target="_blank" rel="noreferrer" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-2xl)', fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>GitHub</a>
++              <a href="mailto:bitwool@163.com" style={{ padding: '6px 16px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-2xl)', fontSize: 12.5, color: 'var(--text-secondary)', textDecoration: 'none' }}>反馈</a>
+             </div>
+           </div>
+           <Section title="联系与支持">
+diff --git a/src/renderer/components/sidebar/AIPanel.tsx b/src/renderer/components/sidebar/AIPanel.tsx
+index 80ce43a..0384432 100644
+--- a/src/renderer/components/sidebar/AIPanel.tsx
++++ b/src/renderer/components/sidebar/AIPanel.tsx
+@@ -663,12 +663,12 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
+               <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
+                 <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin .7s linear infinite' }} />
+                 正在生成修改…
+-                <button onClick={stopEdit} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
++                <button onClick={stopEdit} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 'var(--radius-md)', border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
+               </div>
+             )}
+ 
+             {editError && (
+-              <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 8, marginBottom: 10 }}>{editError}</div>
++              <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 'var(--radius-md)', marginBottom: 10 }}>{editError}</div>
+             )}
+ 
+             {/* 修改前后对比 */}
+@@ -679,7 +679,7 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
+                 </div>
+                 <div style={{
+                   maxHeight: 320, overflowY: 'auto' as const, padding: '12px 14px',
+-                  background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 10,
++                  background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-lg)',
+                   fontSize: 12.5, lineHeight: 1.8, whiteSpace: 'pre-wrap' as const, marginBottom: 10,
+                 }}>
+                   {pendingDiff.parts.map((part, i) => {
+@@ -693,13 +693,13 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
+                   })}
+                 </div>
+                 <div style={{ display: 'flex', gap: 6 }}>
+-                  <button onClick={handleApplyEdit} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
++                  <button onClick={handleApplyEdit} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-md)', border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
+                     ✓ 应用修改
+                   </button>
+-                  <button onClick={() => handleGenerateEdit()} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                  <button onClick={() => handleGenerateEdit()} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
+                     重新生成
+                   </button>
+-                  <button onClick={handleDiscardEdit} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++                  <button onClick={handleDiscardEdit} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
+                     放弃
+                   </button>
+                 </div>
+@@ -713,7 +713,7 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
+                 {editHistory.slice().reverse().map((h, i) => (
+                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 0', color: 'var(--text-secondary)' }}>
+                     <span style={{
+-                      fontSize: 10, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
++                      fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                       background: h.status === 'applied' ? 'rgba(var(--color-success-rgb), 0.15)' : 'rgba(255,255,255,0.06)',
+                       color: h.status === 'applied' ? 'var(--color-success)' : 'var(--text-tertiary)',
+                     }}>
+@@ -735,10 +735,10 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
+                 disabled={editLoading}
+                 placeholder="描述要做的修改，例如「把第二段改得更正式」"
+                 rows={2}
+-                style={{ flex: 1, padding: '8px 10px', borderRadius: 9, background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none' as const, lineHeight: 1.5 }}
++                style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none' as const, lineHeight: 1.5 }}
+               />
+               <button onClick={handleGenerateEdit} disabled={!editInstruction.trim() || editLoading}
+-                style={{ width: 34, height: 34, borderRadius: 9, border: 'none', flexShrink: 0, background: editInstruction.trim() && !editLoading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: editInstruction.trim() && !editLoading ? '#fff' : 'var(--text-tertiary)', cursor: editInstruction.trim() && !editLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
++                style={{ width: 34, height: 34, borderRadius: 'var(--radius-md)', border: 'none', flexShrink: 0, background: editInstruction.trim() && !editLoading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: editInstruction.trim() && !editLoading ? '#fff' : 'var(--text-tertiary)', cursor: editInstruction.trim() && !editLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
+                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+               </button>
+             </div>
+diff --git a/src/renderer/components/sidebar/SettingsView.tsx b/src/renderer/components/sidebar/SettingsView.tsx
+index ec2b277..a40adbe 100644
+--- a/src/renderer/components/sidebar/SettingsView.tsx
++++ b/src/renderer/components/sidebar/SettingsView.tsx
+@@ -26,7 +26,7 @@ const Row: React.FC<{ label: string; desc?: string; children: React.ReactNode }>
+ 
+ const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({ value, onChange }) => (
+   <button onClick={() => onChange(!value)} style={{ width: 40, height: 22, borderRadius: 'var(--radius-lg)', border: 'none', cursor: 'pointer', background: value ? 'linear-gradient(135deg, var(--accent), #9a7040)' : 'var(--bg-surface3)', position: 'relative', transition: 'background var(--dur-base) var(--ease-smooth)', flexShrink: 0 }}>
+-    <div style={{ position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left var(--dur-base) var(--ease-smooth)', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
++    <div style={{ position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left var(--dur-base) var(--ease-smooth)', boxShadow: 'var(--shadow-sm)' }} />
+   </button>
+ );
+ 
+@@ -221,7 +221,7 @@ export const SettingsView: React.FC = () => {
+ 
+         {active === 'about' && <>
+           <div style={{ textAlign: 'center', padding: '32px 0 40px' }}>
+-            <div style={{ width: 72, height: 72, borderRadius: 18, margin: '0 auto 16px', background: 'linear-gradient(135deg, var(--accent), #8b7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, color: '#fff', fontFamily: 'var(--font-serif)' }}>文</div>
++            <div style={{ width: 72, height: 72, borderRadius: 'var(--radius-2xl)', margin: '0 auto 16px', background: 'linear-gradient(135deg, var(--accent), #8b7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, color: '#fff', fontFamily: 'var(--font-serif)' }}>文</div>
+             <div style={{ fontSize: 22, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>启文</div>
+             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 4 }}>版本 1.0.0</div>
+             <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>本地优先的知识管理与写作平台</div>
+diff --git a/src/renderer/components/slides/AiEditChatPanel.tsx b/src/renderer/components/slides/AiEditChatPanel.tsx
+index e675e1c..fffc07b 100644
+--- a/src/renderer/components/slides/AiEditChatPanel.tsx
++++ b/src/renderer/components/slides/AiEditChatPanel.tsx
+@@ -63,16 +63,16 @@ const DiffCard: React.FC<{ entry: DiffEntry; index: number }> = ({ entry, index
+   if (entry.status === 'unchanged') {
+     return (
+       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+-        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: badge[2], color: badge[1], flexShrink: 0 }}>{badge[0]}</span>
++        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)', background: badge[2], color: badge[1], flexShrink: 0 }}>{badge[0]}</span>
+         幻灯片 {index + 1} · {summarize(entry.oldSlide?.content)}
+       </div>
+     );
+   }
+ 
+   return (
+-    <div style={{ padding: '10px 12px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 9, marginBottom: 8 }}>
++    <div style={{ padding: '10px 12px', background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-md)', marginBottom: 8 }}>
+       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: entry.status === 'modified' ? 8 : 0 }}>
+-        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: badge[2], color: badge[1], flexShrink: 0 }}>{badge[0]}</span>
++        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)', background: badge[2], color: badge[1], flexShrink: 0 }}>{badge[0]}</span>
+         <span style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500 }}>幻灯片 {index + 1}</span>
+       </div>
+ 
+@@ -247,12 +247,12 @@ ${JSON.stringify(currentJson, null, 2)}`;
+           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
+             <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin .7s linear infinite' }} />
+             正在生成修改…
+-            <button onClick={stop} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
++            <button onClick={stop} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 'var(--radius-md)', border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
+           </div>
+         )}
+ 
+         {error && (
+-          <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 8, marginBottom: 10 }}>{error}</div>
++          <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 'var(--radius-md)', marginBottom: 10 }}>{error}</div>
+         )}
+ 
+         {pendingDiff && !loading && (
+@@ -262,13 +262,13 @@ ${JSON.stringify(currentJson, null, 2)}`;
+             </div>
+             {pendingDiff.entries.map((entry, i) => <DiffCard key={i} entry={entry} index={i} />)}
+             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+-              <button onClick={handleApply} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
++              <button onClick={handleApply} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-md)', border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
+                 ✓ 应用修改
+               </button>
+-              <button onClick={handleGenerate} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++              <button onClick={handleGenerate} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
+                 重新生成
+               </button>
+-              <button onClick={handleDiscard} style={{ padding: '8px 12px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
++              <button onClick={handleDiscard} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
+                 放弃
+               </button>
+             </div>
+@@ -281,7 +281,7 @@ ${JSON.stringify(currentJson, null, 2)}`;
+             {history.slice().reverse().map((h, i) => (
+               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 0', color: 'var(--text-secondary)' }}>
+                 <span style={{
+-                  fontSize: 10, padding: '1px 6px', borderRadius: 4, flexShrink: 0,
++                  fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                   background: h.status === 'applied' ? 'rgba(var(--color-success-rgb), 0.15)' : 'rgba(255,255,255,0.06)',
+                   color: h.status === 'applied' ? 'var(--color-success)' : 'var(--text-tertiary)',
+                 }}>
+@@ -303,10 +303,10 @@ ${JSON.stringify(currentJson, null, 2)}`;
+             disabled={loading}
+             placeholder="描述要做的修改... (Enter 发送)"
+             rows={2}
+-            style={{ flex: 1, padding: '8px 10px', borderRadius: 9, background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none', lineHeight: 1.5 }}
++            style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none', lineHeight: 1.5 }}
+           />
+           <button onClick={handleGenerate} disabled={!instruction.trim() || loading}
+-            style={{ width: 34, height: 34, borderRadius: 9, border: 'none', flexShrink: 0, background: instruction.trim() && !loading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: instruction.trim() && !loading ? '#fff' : 'var(--text-tertiary)', cursor: instruction.trim() && !loading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
++            style={{ width: 34, height: 34, borderRadius: 'var(--radius-md)', border: 'none', flexShrink: 0, background: instruction.trim() && !loading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: instruction.trim() && !loading ? '#fff' : 'var(--text-tertiary)', cursor: instruction.trim() && !loading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
+             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+           </button>
+         </div>
+diff --git a/src/renderer/components/slides/SlidesView.tsx b/src/renderer/components/slides/SlidesView.tsx
+index 373b1d4..59caa6c 100644
+--- a/src/renderer/components/slides/SlidesView.tsx
++++ b/src/renderer/components/slides/SlidesView.tsx
+@@ -431,7 +431,7 @@ layout 只能是: title, content, two-col, section, image, blank
+ 
+   return (
+     <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:600, background:'rgba(0,0,0,0.65)', backdropFilter:'blur(10px)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+-      <div onClick={e => e.stopPropagation()} style={{ width:520, background:'var(--bg-surface)', border:'0.5px solid var(--border-md)', borderRadius:18, padding:28, boxShadow:'0 32px 80px rgba(0,0,0,0.55)', maxHeight:'90vh', overflowY:'auto' }}>
++      <div onClick={e => e.stopPropagation()} style={{ width:520, background:'var(--bg-surface)', border:'0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', padding:28, boxShadow:'0 32px 80px rgba(0,0,0,0.55)', maxHeight:'90vh', overflowY:'auto' }}>
+ 
+         {/* 标题 */}
+         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:22 }}>
+@@ -458,7 +458,7 @@ layout 只能是: title, content, two-col, section, image, blank
+           <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+             {presets.map(p => (
+               <button key={p} onClick={() => setPrompt(p)}
+-                style={{ padding:'4px 10px', background:'var(--bg-surface3)', border:`0.5px solid ${prompt===p?'var(--accent)':'var(--border)'}`, borderRadius:20, fontSize:11.5, color:prompt===p?'var(--accent)':'var(--text-secondary)', cursor:'pointer', fontFamily:'inherit', transition:'all 0.12s' }}>
++                style={{ padding:'4px 10px', background:'var(--bg-surface3)', border:`0.5px solid ${prompt===p?'var(--accent)':'var(--border)'}`, borderRadius: 'var(--radius-2xl)', fontSize:11.5, color:prompt===p?'var(--accent)':'var(--text-secondary)', cursor:'pointer', fontFamily:'inherit', transition:'all 0.12s' }}>
+                 {p}
+               </button>
+             ))}
+@@ -677,7 +677,7 @@ const PresentationList: React.FC<{
+       {/* 新建弹窗 */}
+       {showCreate && (
+         <div onClick={() => setShowCreate(false)} style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+-          <div onClick={e => e.stopPropagation()} style={{ width:440, background:'var(--bg-surface)', border:'0.5px solid var(--border-md)', borderRadius:16, padding:26, boxShadow:'0 28px 80px rgba(0,0,0,0.5)' }}>
++          <div onClick={e => e.stopPropagation()} style={{ width:440, background:'var(--bg-surface)', border:'0.5px solid var(--border-md)', borderRadius: 'var(--radius-2xl)', padding:26, boxShadow:'0 28px 80px rgba(0,0,0,0.5)' }}>
+             <div style={{ fontSize:16, fontWeight:600, color:'var(--text-primary)', marginBottom:20 }}>新建演示文稿</div>
+             <label style={{ fontSize:12, color:'var(--text-tertiary)', display:'block', marginBottom:6 }}>标题</label>
+             <input autoFocus value={newTitle} onChange={e => setNewTitle(e.target.value)}
+diff --git a/src/renderer/components/templates/TemplatesView.tsx b/src/renderer/components/templates/TemplatesView.tsx
+index adc3111..4bda0c1 100644
+--- a/src/renderer/components/templates/TemplatesView.tsx
++++ b/src/renderer/components/templates/TemplatesView.tsx
+@@ -133,7 +133,7 @@ const EditModal: React.FC<{template:Template|null; onSave:(d:any)=>void; onClose
+     <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(6px)'}}
+       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+       <motion.div initial={{scale:0.95,opacity:0}} animate={{scale:1,opacity:1}}
+-        style={{background:'var(--bg-surface2)',border:'0.5px solid var(--border-md)',borderRadius:18,padding:28,width:560,maxHeight:'85vh',display:'flex',flexDirection:'column' as const,gap:14,boxShadow:'0 32px 80px rgba(0,0,0,0.5)',overflowY:'auto' as const}}>
++        style={{background:'var(--bg-surface2)',border:'0.5px solid var(--border-md)',borderRadius: 'var(--radius-2xl)',padding:28,width:560,maxHeight:'85vh',display:'flex',flexDirection:'column' as const,gap:14,boxShadow:'0 32px 80px rgba(0,0,0,0.5)',overflowY:'auto' as const}}>
+         <div style={{fontSize:16,fontWeight:600,color:'var(--text-primary)'}}>{template?'编辑模板':'新建模板'}</div>
+         <div>
+           <div style={{fontSize:12,color:'var(--text-tertiary)',marginBottom:5}}>模板标题 *</div>
+diff --git a/src/renderer/styles/globals.css b/src/renderer/styles/globals.css
+index 0aef930..9fb082e 100644
+--- a/src/renderer/styles/globals.css
++++ b/src/renderer/styles/globals.css
+@@ -87,6 +87,7 @@
+   --radius-md: 8px;
+   --radius-lg: 11px;
+   --radius-xl: 14px;
++  --radius-2xl: 18px;
+   --radius-pill: 999px;
+ 
+   /* ── Shadow ── */
