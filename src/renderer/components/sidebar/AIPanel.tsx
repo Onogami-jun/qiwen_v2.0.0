@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { diffWords } from 'diff';
 import { htmlToMarkdown, markdownToHtml } from '../../utils/markdownConvert';
+import { getApiKey, saveApiKey, getModel, saveModel, getStoredApiKeyRaw } from '../../services/aiEditClient';
+import { useAiEditSession } from '../../hooks/useAiEditSession';
+import { AiEditShell } from '../shared/AiEditShell';
 
 // ── 类型 ─────────────────────────────────────────────────────
 interface Message {
@@ -74,29 +77,10 @@ function replaceEditorContent(html: string): boolean {
   try { ed.chain().focus().selectAll().insertContent(html).run(); return true; } catch { return false; }
 }
 
-// ── 存储：优先 localStorage（持久化） ────────────────────────
-const KEY_STORAGE = 'qiwen_doubao_apikey';
-const MODEL_STORAGE = 'qiwen_doubao_model';
-// 对话历史用 sessionStorage：重启应用自动清空（不跨会话保留）
-// 如需永久保存，用户可手动导出
+// ── 存储：对话历史用 sessionStorage（重启应用自动清空，不跨会话保留） ──
+// API Key / 模型的存取已经统一到 services/aiEditClient.ts（四个 AI 编辑面板共用）。
+// 如需永久保存对话历史，用户可手动导出。
 const CHAT_HISTORY_KEY = 'qiwen_chat_history_session';
-const BUILTIN_API_KEY = 'ark-0f0fd51c-1395-45bd-9df0-29a195257d96-5ab55';
-const BUILTIN_MODEL = 'doubao-seed-2-0-pro-260215';
-
-function safeGet(key: string): string | null {
-  try { const v = localStorage.getItem(key); if (v !== null) return v; } catch {}
-  try { return sessionStorage.getItem(key); } catch {}
-  return null;
-}
-function safeSet(key: string, value: string) {
-  try { localStorage.setItem(key, value); return; } catch {}
-  try { sessionStorage.setItem(key, value); } catch {}
-}
-
-function getApiKey() { return safeGet(KEY_STORAGE) || BUILTIN_API_KEY; }
-function saveApiKey(k: string) { safeSet(KEY_STORAGE, k); }
-function getModel() { return safeGet(MODEL_STORAGE) || BUILTIN_MODEL; }
-function saveModel(m: string) { safeSet(MODEL_STORAGE, m); }
 
 // 对话历史仅在本次会话内保留（sessionStorage），重启应用自动清空
 function loadChatHistory(): Message[] {
@@ -170,13 +154,12 @@ const ThinkingAnimation: React.FC = () => (
 
 // ── 设置面板 ─────────────────────────────────────────────────
 const SettingsPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [key, setKey] = useState(() => safeGet(KEY_STORAGE) || '');
+  const [key, setKey] = useState(getStoredApiKeyRaw);
   const [model, setModel] = useState(getModel);
   const [show, setShow] = useState(false);
 
   const handleSave = () => {
-    if (key.trim()) saveApiKey(key.trim());
-    else { try { localStorage.removeItem(KEY_STORAGE); } catch {} try { sessionStorage.removeItem(KEY_STORAGE); } catch {} }
+    saveApiKey(key);
     saveModel(model);
     onClose();
   };
@@ -241,21 +224,52 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── "编辑" tab 专用状态 ──────────────────────────────────────
-  // editInstruction: 当前正在输入的修改指令
-  // pendingDiff: 生成出来、等待用户确认的改动（还没写回编辑器）
-  // editHistory: 这个编辑会话里发生过的指令记录（应用过的/放弃的），只是给用户一个"刚才做了什么"的回顾，不持久化
-  const [editInstruction, setEditInstruction] = useState('');
-  const [editLoading, setEditLoading] = useState(false);
-  const [editError, setEditError] = useState('');
-  const [pendingDiff, setPendingDiff] = useState<{
-    instruction: string;
-    oldMarkdown: string;
+  // ── "编辑" tab 专用状态：会话状态机交给四个 AI 编辑面板共用的 useAiEditSession ──
+  // oldMarkdownRef：buildPrompt 阶段读一次当前文档转出的 markdown，parseResponse 阶段
+  // 算 diff 时复用同一份，避免两次单独读取 editor 内容导致基准不一致（跟原实现一样，
+  // 只在生成开始时读一次文档内容）。
+  const oldMarkdownRef = useRef('');
+
+  const editSession = useAiEditSession<{
     newMarkdown: string;
     parts: { value: string; added?: boolean; removed?: boolean }[];
-  } | null>(null);
-  const [editHistory, setEditHistory] = useState<{ instruction: string; status: 'applied' | 'discarded' }[]>([]);
-  const editAbortRef = useRef<AbortController | null>(null);
+  }>({
+    validate: () => {
+      const currentHtml = getEditorHtml();
+      if (!currentHtml || currentHtml === '<p></p>') return '文档内容为空，请先在编辑器中写一些内容';
+      return null;
+    },
+    buildPrompt: (instruction) => {
+      const currentHtml = getEditorHtml();
+      const oldMarkdown = htmlToMarkdown(currentHtml);
+      oldMarkdownRef.current = oldMarkdown;
+
+      const systemPrompt =
+        '你是一个文档编辑助手。下面会给你完整的文档内容（Markdown 格式）和用户希望做的修改。' +
+        '请直接输出修改后的完整文档全文（Markdown 格式），不要输出任何解释、说明或代码块包裹符号，' +
+        '只输出文档本身。没有要求修改的部分要原样保留，不要无关改写。';
+
+      // 编辑场景需要完整文档参与，不像快捷操作那样只截取片段——
+      // 这里只做一个很宽松的上限（约 12000 字），避免极端长文档把请求撑爆，
+      // 正常长度的文章/报告都不会碰到这个上限。
+      const docForPrompt = oldMarkdown.length > 12000 ? oldMarkdown.slice(0, 12000) + '\n\n...(文档过长，已截断)' : oldMarkdown;
+
+      return `${systemPrompt}\n\n文档内容：\n${docForPrompt}\n\n用户的修改要求：${instruction}`;
+    },
+    parseResponse: (result) => {
+      const newMarkdown = result
+        .trim()
+        .replace(/^```(?:markdown|md)?\s*\n/i, '')
+        .replace(/\n```\s*$/, '');
+      const parts = diffWords(oldMarkdownRef.current, newMarkdown);
+      return { newMarkdown, parts };
+    },
+    onApply: (pending) => {
+      const html = markdownToHtml(pending.newMarkdown);
+      return replaceEditorContent(html);
+    },
+  });
+
 
   // 自动滚动
   useEffect(() => {
@@ -409,87 +423,6 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
-
-  // ── AI 编辑：生成修改建议（不直接应用） ─────────────────────
-  const handleGenerateEdit = useCallback(async () => {
-    const instruction = editInstruction.trim();
-    if (!instruction || editLoading) return;
-
-    const currentHtml = getEditorHtml();
-    if (!currentHtml || currentHtml === '<p></p>') {
-      setEditError('文档内容为空，请先在编辑器中写一些内容');
-      return;
-    }
-    const oldMarkdown = htmlToMarkdown(currentHtml);
-
-    setEditLoading(true);
-    setEditError('');
-    setPendingDiff(null);
-
-    const systemPrompt =
-      '你是一个文档编辑助手。下面会给你完整的文档内容（Markdown 格式）和用户希望做的修改。' +
-      '请直接输出修改后的完整文档全文（Markdown 格式），不要输出任何解释、说明或代码块包裹符号，' +
-      '只输出文档本身。没有要求修改的部分要原样保留，不要无关改写。';
-
-    const ctrl = new AbortController();
-    editAbortRef.current = ctrl;
-
-    try {
-      const api = (window as any).electronAPI;
-      if (!api?.invoke) throw new Error('请在桌面应用中使用 AI 功能');
-
-      // 编辑场景需要完整文档参与，不像快捷操作那样只截取片段——
-      // 这里只做一个很宽松的上限（约 12000 字），避免极端长文档把请求撑爆，
-      // 正常长度的文章/报告都不会碰到这个上限。
-      const docForPrompt = oldMarkdown.length > 12000 ? oldMarkdown.slice(0, 12000) + '\n\n...(文档过长，已截断)' : oldMarkdown;
-
-      const result: string = await api.invoke('ai:chat-stream', {
-        messages: [
-          { role: 'user', content: `${systemPrompt}\n\n文档内容：\n${docForPrompt}\n\n用户的修改要求：${instruction}` },
-        ],
-        apiKey: getApiKey(),
-        model: getModel(),
-      });
-
-      if (ctrl.signal.aborted) return;
-      if (!result) throw new Error('AI 返回了空响应，请重试');
-
-      const newMarkdown = result
-        .trim()
-        .replace(/^```(?:markdown|md)?\s*\n/i, '')
-        .replace(/\n```\s*$/, '');
-
-      const parts = diffWords(oldMarkdown, newMarkdown);
-      setPendingDiff({ instruction, oldMarkdown, newMarkdown, parts });
-    } catch (e: any) {
-      if (e?.name === 'AbortError') return;
-      setEditError(e?.message || 'AI 生成修改失败，请重试');
-    } finally {
-      setEditLoading(false);
-      editAbortRef.current = null;
-    }
-  }, [editInstruction, editLoading]);
-
-  const handleApplyEdit = useCallback(() => {
-    if (!pendingDiff) return;
-    const html = markdownToHtml(pendingDiff.newMarkdown);
-    const ok = replaceEditorContent(html);
-    setEditHistory(h => [...h, { instruction: pendingDiff.instruction, status: ok ? 'applied' : 'discarded' }]);
-    if (!ok) setEditError('应用失败：没有检测到打开的文档编辑器');
-    setPendingDiff(null);
-    setEditInstruction('');
-  }, [pendingDiff]);
-
-  const handleDiscardEdit = useCallback(() => {
-    if (!pendingDiff) return;
-    setEditHistory(h => [...h, { instruction: pendingDiff.instruction, status: 'discarded' }]);
-    setPendingDiff(null);
-  }, [pendingDiff]);
-
-  const stopEdit = useCallback(() => {
-    editAbortRef.current?.abort();
-    setEditLoading(false);
-  }, []);
 
   const handleInsert = useCallback((content: string) => {
     if (!insertToEditor(content)) {
@@ -649,102 +582,44 @@ export const AIPanel: React.FC<{ documentContent?: string }> = ({ documentConten
 
       {/* ── AI 编辑 tab ──────────────────────────────────────── */}
       {tab === 'edit' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto' as const, padding: '10px 12px' }}>
-            {!pendingDiff && !editLoading && editHistory.length === 0 && (
-              <div style={{ textAlign: 'center' as const, padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 12.5 }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>✎</div>
-                <div>描述你想对文档做的修改</div>
-                <div style={{ fontSize: 11, marginTop: 6, opacity: 0.7 }}>AI 会先给出修改前后对比，确认无误再应用</div>
-              </div>
-            )}
-
-            {editLoading && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-tertiary)', fontSize: 13, padding: '12px 0' }}>
-                <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin .7s linear infinite' }} />
-                正在生成修改…
-                <button onClick={stopEdit} style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 'var(--radius-md)', border: '0.5px solid rgba(var(--color-danger-rgb), 0.4)', background: 'rgba(var(--color-danger-rgb), 0.08)', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>停止</button>
-              </div>
-            )}
-
-            {editError && (
-              <div style={{ fontSize: 12.5, color: 'var(--color-danger)', padding: '8px 12px', background: 'rgba(var(--color-danger-rgb), 0.08)', borderRadius: 'var(--radius-md)', marginBottom: 10 }}>{editError}</div>
-            )}
-
-            {/* 修改前后对比 */}
-            {pendingDiff && !editLoading && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500, marginBottom: 8 }}>
-                  「{pendingDiff.instruction}」的修改预览
-                </div>
-                <div style={{
-                  maxHeight: 320, overflowY: 'auto' as const, padding: '12px 14px',
-                  background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-lg)',
-                  fontSize: 12.5, lineHeight: 1.8, whiteSpace: 'pre-wrap' as const, marginBottom: 10,
-                }}>
-                  {pendingDiff.parts.map((part, i) => {
-                    if (part.added) {
-                      return <span key={i} style={{ background: 'rgba(var(--color-success-rgb), 0.18)', color: 'var(--color-success)' }}>{part.value}</span>;
-                    }
-                    if (part.removed) {
-                      return <span key={i} style={{ background: 'rgba(var(--color-danger-rgb), 0.14)', color: 'var(--color-danger)', textDecoration: 'line-through' }}>{part.value}</span>;
-                    }
-                    return <span key={i} style={{ color: 'var(--text-secondary)' }}>{part.value}</span>;
-                  })}
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={handleApplyEdit} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-md)', border: 'none', background: 'linear-gradient(135deg,var(--accent),#9a7040)', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, fontFamily: 'inherit' }}>
-                    ✓ 应用修改
-                  </button>
-                  <button onClick={() => handleGenerateEdit()} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
-                    重新生成
-                  </button>
-                  <button onClick={handleDiscardEdit} style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--border)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}>
-                    放弃
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 本次会话的修改记录 */}
-            {editHistory.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>本次会话的修改记录</div>
-                {editHistory.slice().reverse().map((h, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '5px 0', color: 'var(--text-secondary)' }}>
-                    <span style={{
-                      fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
-                      background: h.status === 'applied' ? 'rgba(var(--color-success-rgb), 0.15)' : 'rgba(255,255,255,0.06)',
-                      color: h.status === 'applied' ? 'var(--color-success)' : 'var(--text-tertiary)',
-                    }}>
-                      {h.status === 'applied' ? '已应用' : '已放弃'}
-                    </span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{h.instruction}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+        <AiEditShell
+          variant="embedded"
+          instruction={editSession.instruction}
+          onInstructionChange={editSession.setInstruction}
+          onGenerate={editSession.generate}
+          onStop={editSession.stop}
+          loading={editSession.loading}
+          error={editSession.error}
+          emptyLine1="描述你想对文档做的修改"
+          emptyLine2="AI 会先给出修改前后对比，确认无误再应用"
+          placeholder="描述要做的修改，例如「把第二段改得更正式」"
+          hasPendingDiff={editSession.hasPendingDiff}
+          pendingInstruction={editSession.pendingInstruction}
+          onApply={() => {
+            const ok = editSession.apply();
+            if (!ok) editSession.setError('应用失败：没有检测到打开的文档编辑器');
+          }}
+          onDiscard={editSession.discard}
+          history={editSession.history}
+        >
+          <div style={{
+            maxHeight: 320, overflowY: 'auto' as const, padding: '12px 14px',
+            background: 'var(--bg-surface2)', border: '0.5px solid var(--border)', borderRadius: 'var(--radius-lg)',
+            fontSize: 12.5, lineHeight: 1.8, whiteSpace: 'pre-wrap' as const, marginBottom: 10,
+          }}>
+            {editSession.pendingData?.parts.map((part, i) => {
+              if (part.added) {
+                return <span key={i} style={{ background: 'rgba(var(--color-success-rgb), 0.18)', color: 'var(--color-success)' }}>{part.value}</span>;
+              }
+              if (part.removed) {
+                return <span key={i} style={{ background: 'rgba(var(--color-danger-rgb), 0.14)', color: 'var(--color-danger)', textDecoration: 'line-through' }}>{part.value}</span>;
+              }
+              return <span key={i} style={{ color: 'var(--text-secondary)' }}>{part.value}</span>;
+            })}
           </div>
-
-          <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-              <textarea
-                value={editInstruction}
-                onChange={e => setEditInstruction(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerateEdit(); } }}
-                disabled={editLoading}
-                placeholder="描述要做的修改，例如「把第二段改得更正式」"
-                rows={2}
-                style={{ flex: 1, padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-surface3)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', resize: 'none' as const, lineHeight: 1.5 }}
-              />
-              <button onClick={handleGenerateEdit} disabled={!editInstruction.trim() || editLoading}
-                style={{ width: 34, height: 34, borderRadius: 'var(--radius-md)', border: 'none', flexShrink: 0, background: editInstruction.trim() && !editLoading ? 'linear-gradient(135deg,var(--accent),#9a7040)' : 'var(--bg-surface3)', color: editInstruction.trim() && !editLoading ? '#fff' : 'var(--text-tertiary)', cursor: editInstruction.trim() && !editLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all var(--dur-fast) var(--ease-smooth)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
+        </AiEditShell>
       )}
+
 
       {/* ── 对话 tab ─────────────────────────────────────────── */}
       {tab === 'chat' && (
