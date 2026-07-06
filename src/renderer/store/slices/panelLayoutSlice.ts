@@ -1,5 +1,5 @@
 /**
- * panelLayoutSlice — 面板布局 Redux Slice（稳定版）
+ * panelLayoutSlice — 面板布局 Redux Slice
  */
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
@@ -38,7 +38,6 @@ function createDefault(): SplitPanel {
   };
 }
 
-/** Find parent split + child index. Returns null if node is the root. */
 function findParent(root: PanelNode, childId: string): { parent: SplitPanel; idx: number } | null {
   function walk(n: PanelNode): { parent: SplitPanel; idx: number } | null {
     if (n.type !== 'split') return null;
@@ -52,27 +51,20 @@ function findParent(root: PanelNode, childId: string): { parent: SplitPanel; idx
   return walk(root);
 }
 
-/** Check tree has at least one editor besides excludeId. */
 function hasOtherEditor(tree: PanelNode, excludeId: string): boolean {
   if (tree.type === 'leaf') return tree.panelType === 'editor' && tree.id !== excludeId;
   return tree.children.some(c => hasOtherEditor(c, excludeId));
 }
 
-/** Force all split sizes to sum to 100. */
 function normalize(node: PanelNode): void {
   if (node.type !== 'split') return;
-  const n = node.children.length;
-  if (n === 0) return;
+  if (node.children.length === 0) return;
   const total = node.sizes.reduce((a, b) => a + b, 0);
   if (total <= 0 || Math.abs(total - 100) > 1) {
-    // Re-distribute evenly from where we are
-    const current = [...node.sizes];
-    const sum = current.reduce((a, b) => a + b, 0) || n * 50;
-    node.sizes = current.map(s => Math.max(10, (s / sum) * 100));
-    // Re-normalize if above introduced rounding error
+    const sum = node.sizes.reduce((a, b) => a + b, 0) || node.children.length * 50;
+    node.sizes = node.sizes.map(s => Math.max(10, (s / sum) * 100));
     const total2 = node.sizes.reduce((a, b) => a + b, 0);
     if (Math.abs(total2 - 100) > 0.5) {
-      // Add the remainder to the largest panel
       const maxI = node.sizes.indexOf(Math.max(...node.sizes));
       node.sizes[maxI] += (100 - total2);
     }
@@ -90,7 +82,6 @@ const panelLayoutSlice = createSlice({
     initLayout(s, a: PayloadAction<{ documentId: string; savedTree: PanelNode | null }>) {
       s.loadedDocumentId = a.payload.documentId;
       s.tree = a.payload.savedTree || createDefault();
-      // Focus first editor
       function firstEditor(n: PanelNode): string | null {
         if (n.type === 'leaf') return n.panelType === 'editor' ? n.id : null;
         for (const c of n.children) { const r = firstEditor(c); if (r) return r; }
@@ -100,8 +91,6 @@ const panelLayoutSlice = createSlice({
     },
 
     setTree(s, a: PayloadAction<PanelNode>) { s.tree = a.payload; },
-
-    // ── Split ────────────────────────────────────────────
 
     splitPanel(s, a: PayloadAction<{
       targetId: string; direction: 'horizontal' | 'vertical';
@@ -117,7 +106,6 @@ const panelLayoutSlice = createSlice({
 
       const first = position === 'left' || position === 'top';
 
-      // Case: target is root leaf
       if (s.tree.id === targetId && s.tree.type === 'leaf') {
         const old = cloneNode(s.tree);
         s.tree = {
@@ -128,7 +116,6 @@ const panelLayoutSlice = createSlice({
         return;
       }
 
-      // Case: target is inside a split
       const found = findParent(s.tree, targetId);
       if (!found) return;
       const { parent, idx } = found;
@@ -142,14 +129,10 @@ const panelLayoutSlice = createSlice({
       normalize(s.tree);
     },
 
-    // ── Close ────────────────────────────────────────────
-
     closePanel(s, a: PayloadAction<string>) {
       if (!s.tree) return;
       const panelId = a.payload;
-      if (!hasOtherEditor(s.tree, panelId)) return; // keep at least one editor
-
-      // Root leaf — can't close
+      if (!hasOtherEditor(s.tree, panelId)) return;
       if (s.tree.id === panelId) return;
 
       const found = findParent(s.tree, panelId);
@@ -158,33 +141,25 @@ const panelLayoutSlice = createSlice({
       const { parent, idx } = found;
       const sibling = parent.children[idx === 0 ? 1 : 0];
 
-      // Find the grandparent of this split
       const gp = findParent(s.tree, parent.id);
       if (!gp) {
-        // Parent was root — sibling becomes new root
         s.tree = sibling;
         normalize(s.tree);
         return;
       }
 
-      // Replace the parent split with the sibling in the grandparent
       gp.parent.children[gp.idx] = sibling;
-
-      // If grandparent now has only 1 child, collapse
       if (gp.parent.children.length <= 1 && gp.parent.id === s.tree!.id) {
         s.tree = sibling;
       }
       normalize(s.tree);
 
-      // Update sizes in ancestors
       gp.parent.sizes.splice(gp.idx, 1);
       if (gp.parent.sizes.length === 0) {
         gp.parent.sizes = gp.parent.children.map(() => 100 / gp.parent.children.length);
       }
       normalize(s.tree);
     },
-
-    // ── Resize ───────────────────────────────────────────
 
     resizePanel(s, a: PayloadAction<{ splitId: string; sizes: number[] }>) {
       if (!s.tree) return;
@@ -195,14 +170,16 @@ const panelLayoutSlice = createSlice({
       walk(s.tree);
     },
 
-    // ── Focus ────────────────────────────────────────────
-
     setActivePanel(s, a: PayloadAction<string | null>) { s.activePanelId = a.payload; },
 
-    // ── Drag ─────────────────────────────────────────────
-
     startDrag(s, a: PayloadAction<{ panelId: string; mouseX: number; mouseY: number }>) {
-      s.dragState = { ...a.payload, targetContainerId: null, dropEdge: null };
+      s.dragState = {
+        sourcePanelId: a.payload.panelId,
+        mouseX: a.payload.mouseX,
+        mouseY: a.payload.mouseY,
+        targetContainerId: null,
+        dropEdge: null,
+      };
     },
     updateDrag(s, a: PayloadAction<{ mouseX: number; mouseY: number; targetContainerId: string | null; dropEdge: DropEdge | null }>) {
       if (s.dragState) Object.assign(s.dragState, a.payload);
