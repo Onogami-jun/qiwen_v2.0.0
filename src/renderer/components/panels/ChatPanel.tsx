@@ -1,13 +1,13 @@
 /**
- * ChatPanel — AI 对话面板（Agent 工作流版）
+ * ChatPanel — AI Agent v4（控制栏 + 实时反馈版）
  *
- * 支持：
  * - 多轮对话 + 流式 AI 回复
- * - AI 反问澄清需求
- * - 任务计划卡片（可交互步骤列表）
- * - 折叠式思考块
- * - 逐步确认执行
- * - 消息持久化
+ * - AI 反问 → 任务计划 → 逐步执行
+ * - <action> 标签直接操作编辑器 + 控制面板
+ * - 智能分级确认（安全自动 / 修改确认）
+ * - 自动模式全自主执行
+ * - 实时编辑器反馈（高亮闪烁 + 滚动）
+ * - 执行控制栏（中断 / 修改指令 / 进度展示）
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
@@ -17,231 +17,101 @@ import { msgId } from './types';
 import type { RootState } from '../../store';
 import { ipc } from '../../utils/ipc';
 import { buildSystemPrompt } from '../../utils/writingPreferences';
+import { parseActions, stripActions, getSafety, type ParsedAction } from './actionParser';
+import * as Bridge from './editorBridge';
+import ActionConfirm from './ActionConfirm';
+import AgentControlBar, { type ControlBarState } from './AgentControlBar';
 
-// ── Agent System Prompt ──────────────────────────────────────
+const AGENT_PROMPT = `你是启文（QiWen Writer）的内置 AI Agent。你可以**直接操作编辑器**来完成写作任务。
 
-const AGENT_SYSTEM_PROMPT = `你是一个专业的AI写作助手，集成在"启文（QiWen Writer）"桌面写作应用中。
+## 工作流程
+1. 需求不清晰时先提问（最多3个）→ 生成任务计划
+2. <thinking>思考</thinking> → 使用 action 标签操作编辑器 → 汇报结果
+3. 每步完成后等待用户确认（除非用户开启自动模式）
 
-## 你的工作流程
+## 可用 Action
+- <action type="append" title="节标题">内容</action> — 末尾追加（自动）
+- <action type="insert">内容</action> — 光标插入（自动）
+- <action type="replace" target="原文片段">新内容</action> — 替换（确认）
+- <action type="rewrite" target="段落关键词">改写内容</action> — 改写（确认）
+- <action type="delete" target="原文片段"></action> — 删除（确认）
+- <action type="update_plan" step_id="1" status="done"></action> — 更新计划
 
-当用户提出写作需求时，严格按以下流程：
+## 任务计划格式
+<plan><title>标题</title><step id="1">步骤</step><step id="2">步骤</step></plan>
 
-### 第一阶段：需求澄清
-首先评估用户的请求是否足够清晰。如果缺少任一关键信息，先提问（每次不超过3个问题）：
-- 目标读者是谁？
-- 文档篇幅/字数要求？
-- 写作风格和语气（正式/轻松/学术/科普/...）？
-- 其他特殊要求（是否需要引用、图表、示例等）？
+## 重要
+- 安全操作（append/insert）直接执行并告知结果
+- 修改操作展示 diff 等用户确认
+- 用户说"接受"→ 继续，"拒绝"→ 调整
+- 用户说"自动模式"→ 全自主执行直到叫停
+- 保持 Markdown 格式`;
 
-### 第二阶段：生成任务计划
-需求明确后，生成详细的任务计划。使用以下格式：
-
-<plan>
-<title>任务标题</title>
-<step id="1">第一步：具体要做的事</step>
-<step id="2">第二步：具体要做的事</step>
-</plan>
-
-然后简要说明计划，让用户确认。
-
-### 第三阶段：逐步执行
-用户确认后，逐步执行计划。每一步都要：
-
-1. 先用 <thinking>...</thinking> 写出你的思考过程
-2. 然后输出该步骤的具体成果
-3. 在步骤结束时问用户"这一步OK吗？继续下一步还是需要修改？"
-
-### 标签格式说明
-- <plan> 包裹整个任务计划，包含 <title> 和多个 <step>
-- <thinking> 包裹你的思考过程（思考过程会被折叠显示，用户可展开查看）
-- 这些标签只用于结构化你的输出，不要在标签内写 JSON
-
-### 重要规则
-- 任务计划必须放在 <plan> 标签内
-- 每步执行前必须写 <thinking> 思考过程
-- 每步完成后必须暂停等待用户确认
-- 用户说"继续"或"好的"或"下一步"才进入下一步
-- 用户说"修改XXX"就调整当前步骤内容
-- 全部步骤完成后做一个简短总结`;
-
-// ── Parse AI response for structural tags ───────────────────
-
-interface ParsedResponse {
-  pureContent: string;   // content with tags stripped
-  plan?: { title: string; steps: AgentStep[] };
-  thinking?: string;
-}
-
-function parseTags(content: string): ParsedResponse {
-  const result: ParsedResponse = { pureContent: content };
-
-  // Extract <plan>...</plan>
-  const planMatch = content.match(/<plan>([\s\S]*?)<\/plan>/);
-  if (planMatch) {
-    const inner = planMatch[1];
-    const titleMatch = inner.match(/<title>([\s\S]*?)<\/title>/);
-    const stepMatches = inner.matchAll(/<step\s+id="(\d+)"[^>]*>([\s\S]*?)<\/step>/g);
+function parseTags(content: string): { pure: string; plan: { title: string; steps: AgentStep[] } | null; thinking: string | null; actions: ParsedAction[] } {
+  const pm = content.match(/<plan>([\s\S]*?)<\/plan>/);
+  let plan: { title: string; steps: AgentStep[] } | null = null;
+  if (pm) {
+    const inner = pm[1], tm = inner.match(/<title>([\s\S]*?)<\/title>/);
     const steps: AgentStep[] = [];
-    for (const m of stepMatches) {
-      steps.push({ id: m[1], title: m[2].trim(), status: 'pending' });
-    }
-    if (titleMatch) {
-      result.plan = { title: titleMatch[1].trim(), steps };
-    }
-    // Strip plan tag from pure content
-    result.pureContent = content.replace(/<plan>[\s\S]*?<\/plan>/g, '').trim();
+    for (const m of inner.matchAll(/<step\s+id="(\d+)"[^>]*>([\s\S]*?)<\/step>/g)) steps.push({ id: m[1], title: m[2].trim(), status: 'pending' });
+    if (tm) plan = { title: tm[1].trim(), steps };
   }
-
-  // Extract <thinking>...</thinking>
-  const thinkMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-  if (thinkMatch) {
-    result.thinking = thinkMatch[1].trim();
-    result.pureContent = result.pureContent.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
-  }
-
-  return result;
+  const th = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+  const actions = parseActions(content);
+  let pure = content.replace(/<plan>[\s\S]*?<\/plan>/g, '').replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+  pure = stripActions(pure).trim();
+  return { pure, plan, thinking: th ? th[1].trim() : null, actions };
 }
-
-// ── Markdown → HTML ─────────────────────────────────────────
 
 function renderMD(text: string): string {
   let h = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _lang, code: string) => `<pre><code>${code.trim()}</code></pre>`);
-  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
-  h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  h = h.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  h = h.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
-  h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  return h.split(/\n\n+/).map(b => {
-    const t = b.trim(); if (!t) return '';
-    if (t.startsWith('<pre>') || t.startsWith('<ul>')) return t;
-    return `<p>${t.replace(/\n/g, '<br/>')}</p>`;
-  }).join('\n');
+  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _l, code) => `<pre><code>${code.trim()}</code></pre>`);
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  h = h.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>').replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+  return h.split(/\n\n+/).map(b => { const t = b.trim(); if (!t) return ''; if (t.startsWith('<pre>') || t.startsWith('<ul>')) return t; return `<p>${t.replace(/\n/g, '<br/>')}</p>`; }).join('\n');
 }
-
-// ── Icons ────────────────────────────────────────────────────
 
 const SendIcon = () => (<svg className="pn-chat__send-icon" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 5.5L2 14l3-6.5L2 2z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/></svg>);
 const EmptyIcon = () => (<svg className="pn-chat__empty-icon" viewBox="0 0 48 48" fill="none"><rect x="6" y="8" width="36" height="28" rx="4" stroke="currentColor" strokeWidth="2"/><circle cx="16" cy="22" r="3" fill="currentColor"/><circle cx="24" cy="22" r="3" fill="currentColor"/><circle cx="32" cy="22" r="3" fill="currentColor"/></svg>);
 
-// ── Sub-components ───────────────────────────────────────────
-
-/** Task Plan Card — interactive step list */
-const PlanCard: React.FC<{
-  title: string;
-  steps: AgentStep[];
-  onStepToggle: (id: string) => void;
-  onStart: () => void;
-}> = ({ title, steps, onStepToggle, onStart }) => (
-  <div style={{
-    background: 'var(--bg-surface2, #f8f9fa)',
-    border: '1px solid var(--accent, #c8a96e)',
-    borderRadius: 10, padding: '12px 16px', margin: '8px 0', fontSize: 13,
-  }}>
-    <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)', fontSize: 14 }}>
-      📋 {title}
+const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
+  const [open, setOpen] = useState(false);
+  return (<div style={{ margin: '4px 0' }}>
+    <div onClick={() => setOpen(!open)} style={{ display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:11,color:'var(--text-tertiary)',padding:'3px 8px',borderRadius:6,background:'var(--bg-surface2,#f8f9fa)',userSelect:'none' }}>
+      <span style={{ transform:open?'rotate(90deg)':'none',transition:'transform .15s' }}>▶</span> AI 思考过程
     </div>
+    {open && <div style={{ marginTop:4,padding:'8px 12px',borderRadius:8,background:'var(--bg-secondary,#f9fafb)',fontSize:12,color:'var(--text-secondary)',lineHeight:1.7,borderLeft:'3px solid var(--accent,#c8a96e)',whiteSpace:'pre-wrap',wordBreak:'break-word' }}>{content}</div>}
+  </div>);
+};
+
+const PlanCard: React.FC<{ title: string; steps: AgentStep[]; onStart: () => void }> = ({ title, steps, onStart }) => (
+  <div style={{ background:'var(--bg-surface2,#f8f9fa)',border:'1px solid var(--accent,#c8a96e)',borderRadius:10,padding:'10px 14px',margin:'6px 0',fontSize:13 }}>
+    <div style={{ fontWeight:600,marginBottom:6,fontSize:14 }}>📋 {title}</div>
     {steps.map(s => (
-      <div key={s.id} style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0',
-        cursor: 'pointer', opacity: s.status === 'done' ? 0.5 : 1,
-      }} onClick={() => onStepToggle(s.id)}>
-        <span style={{
-          width: 20, height: 20, borderRadius: '50%', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: 11,
-          background: s.status === 'done' ? 'var(--color-success, #22c55e)' :
-            s.status === 'doing' ? 'var(--accent, #c8a96e)' : 'var(--border, #e2e5e9)',
-          color: s.status !== 'pending' ? '#fff' : 'var(--text-tertiary)',
-          flexShrink: 0,
-        }}>
-          {s.status === 'done' ? '✓' : s.status === 'doing' ? '▶' : s.id}
-        </span>
-        <span style={{ color: 'var(--text-secondary)', textDecoration: s.status === 'done' ? 'line-through' : 'none' }}>
-          {s.title}
-        </span>
+      <div key={s.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'3px 0',opacity:s.status==='done'?0.5:1 }}>
+        <span style={{ width:18,height:18,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,background:s.status==='done'?'var(--color-success,#22c55e)':s.status==='doing'?'var(--accent,#c8a96e)':'var(--border,#e2e5e9)',color:s.status!=='pending'?'#fff':'var(--text-tertiary)',flexShrink:0 }}>{s.status==='done'?'✓':s.status==='doing'?'▶':s.id}</span>
+        <span style={{ color:'var(--text-secondary)',textDecoration:s.status==='done'?'line-through':'none' }}>{s.title}</span>
       </div>
     ))}
-    <button onClick={onStart} style={{
-      marginTop: 10, padding: '6px 18px', borderRadius: 20,
-      border: 'none', background: 'var(--accent, #c8a96e)', color: '#fff',
-      cursor: 'pointer', fontSize: 13, fontWeight: 500,
-    }}>开始执行</button>
+    <button onClick={onStart} style={{ marginTop:8,padding:'5px 16px',borderRadius:20,border:'none',background:'var(--accent,#c8a96e)',color:'#fff',cursor:'pointer',fontSize:12,fontWeight:500 }}>开始执行</button>
   </div>
 );
 
-/** Collapsible Thinking Block */
-const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ margin: '6px 0' }}>
-      <div onClick={() => setOpen(!open)} style={{
-        display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-        fontSize: 12, color: 'var(--text-tertiary)', padding: '4px 8px',
-        borderRadius: 6, background: 'var(--bg-surface2, #f8f9fa)',
-        userSelect: 'none',
-      }}>
-        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
-        <span>AI 思考过程</span>
-      </div>
-      {open && (
-        <div style={{
-          marginTop: 4, padding: '10px 14px', borderRadius: 8,
-          background: 'var(--bg-secondary, #f9fafb)', fontSize: 12,
-          color: 'var(--text-secondary)', lineHeight: 1.7,
-          borderLeft: '3px solid var(--accent, #c8a96e)',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>
-          {content}
-        </div>
-      )}
-    </div>
-  );
+const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () => void; onAccept: (a: ParsedAction) => void; onReject: (a: ParsedAction) => void; pendingId: string | null }> = ({ msg, isLast, onPlanStart, onAccept, onReject, pendingId }) => {
+  const isU = msg.role === 'user'; const meta = msg.meta;
+  const time = (() => { try { return new Date(msg.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } })();
+  const actions = useMemo(() => meta?.actions ? (meta.actions as ParsedAction[]) : [], [meta?.actions]);
+  return (<div className={`pn-chat-msg pn-chat-msg--${msg.role}`}><div className="pn-chat-msg__avatar">{isU?'我':'AI'}</div><div style={{ minWidth:0 }}>
+    {!isU && meta?.thinking && <ThinkingBlock content={meta.thinking} />}
+    {!isU && meta?.plan && isLast && <PlanCard title={meta.plan.title} steps={meta.plan.steps as AgentStep[]} onStart={onPlanStart} />}
+    {!isU && actions.filter((a: ParsedAction) => getSafety(a.type)==='confirm').map((a: ParsedAction, i: number) => <ActionConfirm key={`${a.type}-${i}`} action={a} pending={pendingId != null} onAccept={() => onAccept(a)} onReject={() => onReject(a)} />)}
+    {!isU && meta?.actionResults && (meta.actionResults as string[]).map((r: string, i: number) => <div key={i} style={{ fontSize:11,color:'var(--color-success,#22c55e)',padding:'2px 0',display:'flex',alignItems:'center',gap:4 }}><span>✓</span><span>{r}</span></div>)}
+    {meta?.pureContent || msg.content ? <div className="pn-chat-msg__bubble">{isU?msg.content:<div dangerouslySetInnerHTML={{__html:renderMD(meta?.pureContent||msg.content)}}/>}</div> : null}
+    <div className="pn-chat-msg__time">{time}</div>
+  </div></div>);
 };
 
-// ── Message Bubble ───────────────────────────────────────────
-
-const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart?: () => void }> = ({ msg, isLast, onPlanStart }) => {
-  const meta = msg.meta;
-  const isUser = msg.role === 'user';
-  const time = (() => { try { return new Date(msg.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })();
-
-  return (
-    <div className={`pn-chat-msg pn-chat-msg--${msg.role}`}>
-      <div className="pn-chat-msg__avatar">{isUser ? '我' : 'AI'}</div>
-      <div style={{ minWidth: 0 }}>
-        {/* Thinking block (assistant only) */}
-        {!isUser && meta?.thinking && (
-          <ThinkingBlock content={meta.thinking} />
-        )}
-
-        {/* Plan card */}
-        {!isUser && meta?.plan && isLast && (
-          <PlanCard
-            title={meta.plan.title}
-            steps={meta.plan.steps}
-            onStepToggle={() => {}} // TODO: interactive step toggle
-            onStart={() => onPlanStart?.()}
-          />
-        )}
-
-        {/* Text content */}
-        {meta?.pureContent || msg.content ? (
-          <div className="pn-chat-msg__bubble">
-            {isUser ? (
-              msg.content
-            ) : (
-              <div dangerouslySetInnerHTML={{ __html: renderMD(meta?.pureContent || msg.content) }} />
-            )}
-          </div>
-        ) : null}
-
-        <div className="pn-chat-msg__time">{time}</div>
-      </div>
-    </div>
-  );
-};
-
-// ── Component ────────────────────────────────────────────────
+// ── Main Component ───────────────────────────────────────────
 
 interface Props { node: LeafPanel; getDocumentContent?: () => string; }
 
@@ -250,186 +120,185 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [autoMode, setAutoMode] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const [cbState, setCbState] = useState<ControlBarState>({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
   const endRef = useRef<HTMLDivElement>(null);
+  const autoRef = useRef(autoMode); autoRef.current = autoMode;
+  const msgsRef = useRef(msgs); msgsRef.current = msgs;
 
-  // Load on mount
+  // Register editor bridge
   useEffect(() => {
-    if (!docId || loaded) return; let c = false;
-    (async () => {
-      try {
-        const rows = await ipc.invoke<any[]>('db:getChatMessages', { documentId: docId, limit: 50 });
-        if (!c && rows?.length) {
-          setMsgs(rows.map((r: any) => ({
-            id: r.id, documentId: r.document_id ?? r.documentId,
-            role: r.role, content: r.content,
-            createdAt: r.created_at ?? r.createdAt,
-            meta: typeof r.meta === 'string' ? JSON.parse(r.meta || '{}') : (r.meta || undefined),
-          })));
-        }
-      } catch {} finally { if (!c) setLoaded(true); }
-    })();
-    return () => { c = true; };
-  }, [docId, loaded]);
+    Bridge.registerEditor('document', {
+      getText: () => getDocumentContent?.() || '',
+      getHTML: () => getDocumentContent?.() || '',
+      insert: (c: string) => { const ed = (window as any).__activeEditor; if (ed) { try { ed.chain().focus().insertContent(c).run(); return true; } catch { return false; } } return false; },
+      replaceAll: (h: string) => { const ed = (window as any).__activeEditor; if (ed) { try { ed.chain().focus().selectAll().insertContent(h).run(); return true; } catch { return false; } } return false; },
+      findAndReplace: (s: string, r: string) => { const ed = (window as any).__activeEditor; if (!ed) return false; try { const t = ed.getText()||''; if (t.includes(s)) { const nh = (ed.getHTML()||'').split(s).join(r); ed.chain().focus().selectAll().insertContent(nh).run(); return true; } } catch {} try { ed.chain().focus().insertContent(r).run(); return true; } catch { return false; } },
+      getSelection: () => { try { return (window as any).__activeEditor?.state?.selection?.content?.()?.content?.textBetween?.() || ''; } catch { return ''; } },
+    });
+    return () => Bridge.unregisterEditor('document');
+  }, [getDocumentContent]);
 
-  // Auto-scroll
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+  useEffect(() => { if (!docId||loaded) return; let c = false; (async () => { try { const rows = await ipc.invoke<any[]>('db:getChatMessages', {documentId:docId,limit:100}); if (!c&&rows?.length) setMsgs(rows.map((r:any) => ({ id:r.id, documentId:r.document_id??r.documentId, role:r.role, content:r.content, createdAt:r.created_at??r.createdAt, meta:typeof r.meta==='string'?JSON.parse(r.meta||'{}'):(r.meta||undefined) }))); } catch{} finally { if(!c) setLoaded(true); } })(); return () => { c=true; }; }, [docId,loaded]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [msgs]);
+  const persist = useCallback(async (m: ChatMessage) => { try { await ipc.invoke('db:saveChatMessage', m); } catch{} }, []);
 
-  // Persist
-  const persist = useCallback(async (m: ChatMessage) => {
-    try { await ipc.invoke('db:saveChatMessage', m); } catch {}
+  const callAi = useCallback(async (toSend: ChatMessage[]) => {
+    setStreaming(true); setCbState(p => ({...p, status:'thinking', visible:true }));
+    try {
+      const doc = getDocumentContent?.()??'', pref = await buildSystemPrompt();
+      const sys = [pref, AGENT_PROMPT]; if (doc) sys.push(`\n当前文档：\n\`\`\`\n${doc.slice(0,3000)}\n\`\`\``);
+      if (autoRef.current) sys.push('\n用户已开启自动模式，自主执行无需确认。');
+      const recent = toSend.slice(-25).map(m=>({role:m.role,content:m.content}));
+      const resp = await ipc.invoke<any>('ai:chat-stream', {messages:[{role:'system',content:sys.filter(Boolean).join('\n')},...recent],apiKey:'',model:''});
+      const content = typeof resp==='string'?resp:(resp?.content||resp?.text||JSON.stringify(resp));
+      setCbState(p => ({...p, status:'executing' }));
+      return content;
+    } catch (err: any) { throw err; }
+    finally { setStreaming(false); }
+  }, [getDocumentContent]);
+
+  // Execute actions with visual feedback
+  const execActions = useCallback((actions: ParsedAction[]): string[] => {
+    const results: string[] = [];
+    for (const a of actions) {
+      const s = getSafety(a.type);
+      if (s !== 'safe' && !autoRef.current) continue;
+      let r: Bridge.ActionResult = { success: false, message: '' };
+      switch (a.type) {
+        case 'append': r = Bridge.actionAppend(a.payload.title||'', a.content); break;
+        case 'insert': r = Bridge.actionInsert(a.content); break;
+        case 'replace': r = Bridge.actionReplace(a.payload.target||'', a.content); break;
+        case 'rewrite': r = Bridge.actionRewrite(a.payload.target||'', a.content); break;
+        case 'delete': r = Bridge.actionDelete(a.payload.target||''); break;
+      }
+      if (r.message) results.push(r.success ? r.message : `❌ ${r.message}`);
+      setCbState(p => ({...p, status:'executing', currentStep:r.message }));
+    }
+    Bridge.flashEditorChange(); Bridge.scrollToChange();
+    return results;
   }, []);
 
-  // Parse & store AI response
-  const handleAiResponse = useCallback((content: string): ChatMessage => {
-    const parsed = parseTags(content);
-    const meta: ChatMetadata = {};
-    let kind: ChatMetadata['kind'] = 'normal';
+  const processResponse = useCallback((raw: string) => {
+    const { pure, plan, thinking, actions } = parseTags(raw);
+    const meta: any = { pureContent: pure, kind: plan?'plan':thinking?'thinking':'normal' };
+    if (plan) meta.plan = plan; if (thinking) meta.thinking = thinking;
+    const confirm = actions.filter(a => getSafety(a.type)==='confirm' && !autoRef.current);
+    if (confirm.length) meta.actions = confirm;
+    // Execute safe/auto actions now
+    const executable = actions.filter(a => getSafety(a.type)==='safe' || (autoRef.current && getSafety(a.type)==='confirm'));
+    if (executable.length) { const results = execActions(executable); if (results.length) meta.actionResults = results; setCbState(p => ({...p, completedSteps:p.completedSteps+executable.length })); }
+    return { id: msgId(), documentId: docId!, role: 'assistant' as const, content: raw, createdAt: new Date().toISOString(), meta };
+  }, [docId, execActions]);
 
-    if (parsed.plan) { meta.plan = parsed.plan; kind = 'plan'; }
-    if (parsed.thinking) { meta.thinking = parsed.thinking; kind = kind === 'normal' ? 'thinking' : kind; }
-    meta.pureContent = parsed.pureContent;
-    meta.kind = kind;
-
-    return {
-      id: msgId(), documentId: docId!, role: 'assistant',
-      content, // keep full raw content in DB
-      createdAt: new Date().toISOString(),
-      meta,
-    };
-  }, [docId]);
-
-  // Send message
-  const send = useCallback(async () => {
-    const t = input.trim(); if (!t || streaming || !docId) return;
-    setInput('');
-
-    const um: ChatMessage = { id: msgId(), documentId: docId, role: 'user', content: t, createdAt: new Date().toISOString() };
-    setMsgs(p => [...p, um]); persist(um);
-
-    setStreaming(true);
-    try {
-      const doc = getDocumentContent?.() ?? '';
-      const prefPrompt = await buildSystemPrompt();
-
-      // Build system message
-      const sysParts = [];
-      if (prefPrompt) sysParts.push(prefPrompt);
-      sysParts.push(AGENT_SYSTEM_PROMPT);
-      if (doc) sysParts.push(`\n当前用户正在编辑的文档内容：\n\`\`\`\n${doc.slice(0, 3000)}\n\`\`\``);
-
-      const recent = [...msgs.slice(-20), um].map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const payload = {
-        messages: [
-          { role: 'system', content: sysParts.join('\n') },
-          ...recent,
-        ],
-        apiKey: '', model: '',
-      };
-
-      const response = await ipc.invoke<any>('ai:chat-stream', payload);
-      const content = typeof response === 'string' ? response : (response?.content || response?.text || JSON.stringify(response));
-
-      const am = handleAiResponse(content);
-      setMsgs(p => [...p, am]); persist(am);
-    } catch (err: any) {
-      const em: ChatMessage = {
-        id: msgId(), documentId: docId, role: 'assistant',
-        content: '抱歉，请求失败：' + (err?.message || '未知错误'),
-        createdAt: new Date().toISOString(),
-        meta: { kind: 'normal', pureContent: '抱歉，请求失败：' + (err?.message || '未知错误') },
-      };
-      setMsgs(p => [...p, em]); persist(em);
-    } finally { setStreaming(false); }
-  }, [input, streaming, docId, msgs, persist, getDocumentContent, handleAiResponse]);
-
-  // "开始执行" button callback
-  const onPlanStart = useCallback(() => {
-    setInput('开始执行计划');
-    // Auto-send after a tick
+  // Override handler for control bar
+  const handleOverride = useCallback((instruction: string) => {
+    setInput(instruction);
+    // Don't auto-send, let user press Enter
+    // But we can simulate: fill input then auto-send
     setTimeout(() => {
-      // We'll use send() which reads from input state but it already captured old input.
-      // Instead, let's directly trigger send with "开始执行计划"
+      const txt = instruction.trim();
+      if (!txt || !docId) return;
+      // We need to send from outside — let's set input and trigger
     }, 100);
   }, []);
 
-  // Actually for "开始执行", we need to send a system message. Let me fix this.
-  // The plan start button will insert a user message "开始执行计划" and trigger send.
-  const startPlan = useCallback(async () => {
-    if (streaming || !docId) return;
-    const txt = '开始执行计划';
-    const um: ChatMessage = { id: msgId(), documentId: docId, role: 'user', content: txt, createdAt: new Date().toISOString() };
-    setMsgs(p => [...p, um]); persist(um);
-
-    setStreaming(true);
+  const send = useCallback(async () => {
+    const t = input.trim(); if (!t||streaming||!docId) return; setInput('');
+    if (t.includes('自动模式')||t.toLowerCase().includes('auto mode')) setAutoMode(true);
+    if (t.includes('停止自动')||t.includes('取消自动')||t.includes('手动模式')) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
+    const um: ChatMessage = { id:msgId(), documentId:docId, role:'user', content:t, createdAt:new Date().toISOString() };
+    const cur = [...msgsRef.current, um]; setMsgs(cur); persist(um);
     try {
-      const doc = getDocumentContent?.() ?? '';
-      const prefPrompt = await buildSystemPrompt();
-      const sysParts = [];
-      if (prefPrompt) sysParts.push(prefPrompt);
-      sysParts.push(AGENT_SYSTEM_PROMPT);
-      if (doc) sysParts.push(`\n当前用户正在编辑的文档内容：\n\`\`\`\n${doc.slice(0, 3000)}\n\`\`\``);
-
-      const allMsgs = [...msgs, um];
-      const recent = allMsgs.slice(-22).map(m => ({ role: m.role, content: m.content }));
-
-      const response = await ipc.invoke<any>('ai:chat-stream', {
-        messages: [{ role: 'system', content: sysParts.join('\n') }, ...recent],
-        apiKey: '', model: '',
-      });
-
-      const content = typeof response === 'string' ? response : (response?.content || response?.text || JSON.stringify(response));
-      const am = handleAiResponse(content);
+      const content = await callAi(cur);
+      const am = processResponse(content);
       setMsgs(p => [...p, am]); persist(am);
+      if (autoRef.current && am.meta?.plan) setTimeout(() => autoContinue(am), 1000);
+      else if (!autoRef.current) setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
     } catch (err: any) {
-      const em: ChatMessage = {
-        id: msgId(), documentId: docId, role: 'assistant',
-        content: '抱歉，请求失败：' + (err?.message || '未知错误'),
-        createdAt: new Date().toISOString(),
-        meta: { kind: 'normal', pureContent: '抱歉，请求失败：' + (err?.message || '未知错误') },
-      };
-      setMsgs(p => [...p, em]); persist(em);
-    } finally { setStreaming(false); }
-  }, [streaming, docId, msgs, persist, getDocumentContent, handleAiResponse]);
+      setMsgs(p => [...p, { id:msgId(), documentId:docId, role:'assistant', content:'抱歉：'+(err?.message||'未知错误'), createdAt:new Date().toISOString(), meta:{ kind:'normal', pureContent:'抱歉：'+(err?.message||'未知错误') } }]);
+      setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
+    }
+  }, [input, streaming, docId, persist, callAi, processResponse]);
 
-  const onKeyDown = useCallback((e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }, [send]);
-  const onInputC = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }, []);
+  const autoContinue = useCallback(async (lastMsg: ChatMessage) => {
+    if (!autoRef.current||!docId) return;
+    const cm: ChatMessage = { id:msgId(), documentId:docId, role:'user', content:'继续下一步（自动模式）', createdAt: new Date().toISOString() };
+    const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
+    try {
+      const content = await callAi(cur);
+      const am = processResponse(content);
+      setMsgs(p => [...p, am]); persist(am);
+      if (autoRef.current) {
+        // Check if all steps done
+        const allDone = !am.meta?.plan || am.meta.plan.steps.every((s: AgentStep) => s.status === 'done');
+        if (allDone) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
+        else setTimeout(() => autoContinue(am), 1500);
+      }
+    } catch { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
+  }, [docId, callAi, processResponse, persist]);
 
-  // Render messages
-  const msgList = useMemo(() => msgs.map((m, i) => (
-    <MsgBubble key={m.id} msg={m} isLast={i === msgs.length - 1} onPlanStart={startPlan} />
-  )), [msgs, startPlan]);
+  const startPlan = useCallback(async () => {
+    if (streaming||!docId) return;
+    const cm: ChatMessage = { id:msgId(), documentId:docId, role:'user', content:'开始执行计划', createdAt:new Date().toISOString() };
+    const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
+    // Set up control bar with plan info
+    const lastMsg = msgsRef.current[msgsRef.current.length-1];
+    const plan = lastMsg?.meta?.plan;
+    if (plan) setCbState({ visible:true, status:'executing', currentStep:plan.steps[0]?.title||'', totalSteps:plan.steps.length, completedSteps:0 });
+    try {
+      const content = await callAi(cur);
+      const am = processResponse(content);
+      setMsgs(p => [...p, am]); persist(am);
+      if (!autoRef.current) setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
+    } catch {}
+  }, [streaming, docId, persist, callAi, processResponse]);
 
-  return (
-    <Panel node={node}>
-      <div className="pn-chat">
-        {msgs.length === 0 ? (
-          <div className="pn-chat__empty"><EmptyIcon /><p className="pn-chat__empty-text">告诉我你想写什么<br/>比如"帮我写一篇产品发布公告"</p></div>
-        ) : (
-          <div className="pn-chat__messages">
-            {msgList}
-            {streaming && (
-              <div className="pn-chat-streaming">
-                <span>AI 正在思考</span>
-                <span className="pn-chat-streaming__dots">
-                  <span className="pn-chat-streaming__dot"/><span className="pn-chat-streaming__dot"/><span className="pn-chat-streaming__dot"/>
-                </span>
-              </div>
-            )}
-            <div ref={endRef}/>
-          </div>
-        )}
-        <div className="pn-chat__input-area">
-          <textarea className="pn-chat__input" value={input} onChange={onInputC} onKeyDown={onKeyDown} placeholder="描述你的写作需求..." rows={1} disabled={streaming} />
-          <button className="pn-chat__send" onClick={send} disabled={streaming || !input.trim()} title="发送"><SendIcon /></button>
-        </div>
-      </div>
-    </Panel>
-  );
+  const acceptAction = useCallback(async (action: ParsedAction) => {
+    setPendingActionId(`${action.type}-${Date.now()}`);
+    let r: Bridge.ActionResult = { success: false, message: '' };
+    switch (action.type) { case 'replace': r = Bridge.actionReplace(action.payload.target||'', action.content); break; case 'rewrite': r = Bridge.actionRewrite(action.payload.target||'', action.content); break; case 'delete': r = Bridge.actionDelete(action.payload.target||''); break; }
+    setPendingActionId(null);
+    const fb: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:`操作已完成：${r.message}。请继续下一步。`, createdAt:new Date().toISOString() };
+    const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch {}
+  }, [docId, persist, callAi, processResponse]);
+
+  const rejectAction = useCallback(async (action: ParsedAction) => {
+    const fb: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:'我拒绝了那个操作。请提供替代方案。', createdAt:new Date().toISOString() };
+    const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch {}
+  }, [docId, persist, callAi, processResponse]);
+
+  // Handle override input from control bar
+  const handleControlOverride = useCallback(async (instr: string) => {
+    const cm: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:`（打断当前任务）${instr}`, createdAt:new Date().toISOString() };
+    const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
+    try {
+      const content = await callAi(cur);
+      const am = processResponse(content);
+      setMsgs(p => [...p, am]); persist(am);
+      setCbState(p => ({...p, status:'executing' }));
+    } catch {}
+  }, [docId, persist, callAi, processResponse]);
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent) => { if (e.key==='Enter'&&!e.shiftKey) { e.preventDefault(); send(); } }, [send]);
+  const onInputC = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => { setInput(e.target.value); e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; }, []);
+
+  const msgList = useMemo(() => msgs.map((m, i) => <MsgBubble key={m.id} msg={m} isLast={i===msgs.length-1} onPlanStart={startPlan} onAccept={acceptAction} onReject={rejectAction} pendingId={pendingActionId} />), [msgs, startPlan, acceptAction, rejectAction, pendingActionId]);
+
+  return (<Panel node={node}><div className="pn-chat">
+    {msgs.length===0 ? <div className="pn-chat__empty"><EmptyIcon/><p className="pn-chat__empty-text">告诉我你想写什么<br/>比如"帮我写一篇产品发布公告"</p></div>
+    : <div className="pn-chat__messages">{msgList}{streaming&&<div className="pn-chat-streaming"><span>AI 正在思考</span><span className="pn-chat-streaming__dots"><span className="pn-chat-streaming__dot"/><span className="pn-chat-streaming__dot"/><span className="pn-chat-streaming__dot"/></span></div>}<div ref={endRef}/></div>}
+    <div className="pn-chat__input-area">
+      <textarea className="pn-chat__input" value={input} onChange={onInputC} onKeyDown={onKeyDown} placeholder={autoMode?'自动模式运行中…':'描述你的写作需求…'} rows={1} disabled={streaming||autoMode}/>
+      <button className="pn-chat__send" onClick={send} disabled={streaming||autoMode||!input.trim()} title="发送"><SendIcon/></button>
+    </div>
+    {/* Execution control bar */}
+    <AgentControlBar state={cbState} onStop={() => { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }} onOverride={handleControlOverride} />
+  </div></Panel>);
 };
 
 export default React.memo(ChatPanel);
