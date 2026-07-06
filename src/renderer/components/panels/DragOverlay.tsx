@@ -29,7 +29,7 @@ function findTarget(mx: number, my: number, rects: Rect[]): { containerId: strin
       { edge: 'top', dist: my - r.top }, { edge: 'bottom', dist: r.top + r.height - my },
     ];
     for (const { edge, dist } of edges) {
-      if (dist <= EDGE_PX && dist > 5 && (!best || dist < best.dist)) best = { containerId: r.id, edge, distance: dist };
+      if (dist <= EDGE_PX && dist > 5 && (!best || dist < best.dist)) best = { containerId: r.id, edge, dist };
     }
   }
   return best ? { containerId: best.containerId, edge: best.edge } : null;
