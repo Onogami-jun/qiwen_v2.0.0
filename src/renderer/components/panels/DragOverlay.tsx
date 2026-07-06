@@ -1,11 +1,5 @@
 /**
- * DragOverlay — 全局拖拽覆盖层（简化版）
- *
- * 拖拽行为：
- * 1. 拖面板标题栏超过 8px → 显示浮动预览跟随鼠标
- * 2. 鼠标移到目标面板的上下左右边缘 30px → 显示蓝色预览区
- * 3. 松手 → 在该方向分屏插入新面板
- * 4. 鼠标不在任何热区松手 → 取消拖拽，面板归位
+ * DragOverlay — 全局拖拽覆盖层
  */
 import React, { useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
@@ -15,35 +9,33 @@ import type { DropEdge, PanelNode } from '../../store/slices/panelLayoutSlice';
 
 const EDGE_PX = 32;
 
-// ── Find the leaf panel ID nearest to the mouse ──────────────
+// ── Find target ──────────────────────────────────────────────
 
-function findTarget(
-  mx: number, my: number,
-): { panelId: string; edge: DropEdge } | null {
+function findTarget(mx: number, my: number): { panelId: string; edge: DropEdge } | null {
   const panels = document.querySelectorAll('[data-panel-id]');
-  let best: { panelId: string; edge: DropEdge; dist: number } | null = null;
+  let bestId = ''; let bestEdge: DropEdge = 'left'; let bestDist = Infinity;
 
-  panels.forEach((el) => {
-    const r = el.getBoundingClientRect();
-    if (mx < r.left || mx > r.left + r.width || my < r.top || my > r.top + r.height) return;
+  for (const el of panels) {
+    const r = (el as HTMLElement).getBoundingClientRect();
+    if (mx < r.left || mx > r.left + r.width || my < r.top || my > r.top + r.height) continue;
 
     const dL = mx - r.left, dR = r.left + r.width - mx;
     const dT = my - r.top, dB = r.top + r.height - my;
 
     for (const [edge, dist] of [['left', dL], ['right', dR], ['top', dT], ['bottom', dB]] as [DropEdge, number][]) {
-      if (dist <= EDGE_PX && dist > 4 && (!best || dist < best.dist)) {
-        best = { panelId: (el as HTMLElement).dataset.panelId!, edge, dist };
+      if (dist <= EDGE_PX && dist > 4 && dist < bestDist) {
+        bestDist = dist;
+        bestEdge = edge;
+        bestId = (el as HTMLElement).dataset.panelId ?? '';
       }
     }
-  });
-  return best ? { panelId: best.panelId, edge: best.edge } : null;
+  }
+  return bestDist < Infinity ? { panelId: bestId, edge: bestEdge } : null;
 }
 
-// ── Drop Zone Indicator ─────────────────────────────────────
+// ── Drop Zone ────────────────────────────────────────────────
 
-interface ZoneProps { panelId: string; edge: DropEdge }
-
-const DropZone: React.FC<ZoneProps> = ({ panelId, edge }) => {
+const DropZone: React.FC<{ panelId: string; edge: DropEdge }> = ({ panelId, edge }) => {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,7 +43,7 @@ const DropZone: React.FC<ZoneProps> = ({ panelId, edge }) => {
     if (!el || !ref.current) return;
     const r = el.getBoundingClientRect();
     const z = 0.35;
-    const map: Record<DropEdge, { left: string; top: string; width: string; height: string }> = {
+    const map: Record<DropEdge, Record<string, string>> = {
       left:   { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width*z}px`, height: `${r.height}px` },
       right:  { left: `${r.left+r.width*(1-z)}px`, top: `${r.top}px`, width: `${r.width*z}px`, height: `${r.height}px` },
       top:    { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height*z}px` },
@@ -63,7 +55,7 @@ const DropZone: React.FC<ZoneProps> = ({ panelId, edge }) => {
   return <div ref={ref} className="pn-drop-zone" />;
 };
 
-// ── Component ────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────
 
 let _raf = 0;
 
@@ -94,7 +86,6 @@ const DragOverlay: React.FC = () => {
     const onUp = (e: MouseEvent) => {
       const t = findTarget(e.clientX, e.clientY);
       if (t && tree) {
-        // Determine which type of panel to create (opposite of source)
         const sourceType: 'editor' | 'chat' =
           ds.sourcePanelId.includes('chat') ? 'chat' : 'editor';
         const newType = sourceType === 'editor' ? 'chat' : 'editor';
