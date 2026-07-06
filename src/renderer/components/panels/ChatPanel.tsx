@@ -1,10 +1,10 @@
 /**
- * ChatPanel — AI Agent v4（控制栏 + 实时反馈版）
+ * ChatPanel — AI Agent v4 (control bar + live feedback)
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import Panel from './Panel';
-import type { LeafPanel, ChatMessage, ChatMetadata, AgentStep } from './types';
+import type { LeafPanel, ChatMessage, AgentStep } from './types';
 import { msgId } from './types';
 import type { RootState } from '../../store';
 import { ipc } from '../../utils/ipc';
@@ -104,8 +104,6 @@ const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () =
   </div></div>);
 };
 
-// ── Main Component ───────────────────────────────────────────
-
 interface Props { node: LeafPanel; getDocumentContent?: () => string; }
 
 const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
@@ -121,7 +119,6 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
   const autoRef = useRef(autoMode); autoRef.current = autoMode;
   const msgsRef = useRef(msgs); msgsRef.current = msgs;
 
-  // Register editor bridge
   useEffect(() => {
     Bridge.registerEditor('document', {
       getText: () => getDocumentContent?.() || '',
@@ -138,26 +135,24 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth' }); }, [msgs]);
   const persist = useCallback(async (m: ChatMessage) => { try { await ipc.invoke('db:saveChatMessage', m); } catch{} }, []);
 
-  const callAi = useCallback(async (toSend: ChatMessage[]) => {
+  const callAi = useCallback(async (toSend: ChatMessage[]): Promise<string> => {
     setStreaming(true); setCbState(p => ({...p, status:'thinking', visible:true }));
     try {
       const doc = getDocumentContent?.()??'', pref = await buildSystemPrompt();
-      const sys = [pref, AGENT_PROMPT]; if (doc) sys.push(`\n当前文档：\n\`\`\`\n${doc.slice(0,3000)}\n\`\`\``);
+      const sys = [pref, AGENT_PROMPT]; if (doc) sys.push('\n当前文档：\n```\n'+doc.slice(0,3000)+'\n```');
       if (autoRef.current) sys.push('\n用户已开启自动模式，自主执行无需确认。');
       const recent = toSend.slice(-25).map(m=>({role:m.role,content:m.content}));
       const resp = await ipc.invoke<any>('ai:chat-stream', {messages:[{role:'system',content:sys.filter(Boolean).join('\n')},...recent],apiKey:'',model:''});
       const content = typeof resp==='string'?resp:(resp?.content||resp?.text||JSON.stringify(resp));
       setCbState(p => ({...p, status:'executing' }));
       return content;
-    } catch (err: any) { throw err; }
-    finally { setStreaming(false); }
+    } finally { setStreaming(false); }
   }, [getDocumentContent]);
 
   const execActions = useCallback((actions: ParsedAction[]): string[] => {
     const results: string[] = [];
     for (const a of actions) {
-      const s = getSafety(a.type);
-      if (s !== 'safe' && !autoRef.current) continue;
+      if (getSafety(a.type) !== 'safe' && !autoRef.current) continue;
       let r: Bridge.ActionResult = { success: false, message: '' };
       switch (a.type) {
         case 'append': r = Bridge.actionAppend(a.payload.title||'', a.content); break;
@@ -166,22 +161,23 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
         case 'rewrite': r = Bridge.actionRewrite(a.payload.target||'', a.content); break;
         case 'delete': r = Bridge.actionDelete(a.payload.target||''); break;
       }
-      if (r.message) results.push(r.success ? r.message : `❌ ${r.message}`);
+      if (r.message) results.push(r.success ? r.message : '❌ '+r.message);
       setCbState(p => ({...p, status:'executing', currentStep:r.message }));
     }
     Bridge.flashEditorChange(); Bridge.scrollToChange();
     return results;
   }, []);
 
-  const processResponse = useCallback((raw: string) => {
+  const processResponse = useCallback((raw: string): ChatMessage => {
     const { pure, plan, thinking, actions } = parseTags(raw);
     const meta: any = { pureContent: pure, kind: plan?'plan':thinking?'thinking':'normal' };
-    if (plan) meta.plan = plan; if (thinking) meta.thinking = thinking;
+    if (plan) meta.plan = plan;
+    if (thinking) meta.thinking = thinking;
     const confirm = actions.filter(a => getSafety(a.type)==='confirm' && !autoRef.current);
     if (confirm.length) meta.actions = confirm;
     const executable = actions.filter(a => getSafety(a.type)==='safe' || (autoRef.current && getSafety(a.type)==='confirm'));
     if (executable.length) { const results = execActions(executable); if (results.length) meta.actionResults = results; setCbState(p => ({...p, completedSteps:p.completedSteps+executable.length })); }
-    return { id: msgId(), documentId: docId!, role: 'assistant' as const, content: raw, createdAt: new Date().toISOString(), meta };
+    return { id: msgId(), documentId: docId!, role: 'assistant', content: raw, createdAt: new Date().toISOString(), meta };
   }, [docId, execActions]);
 
   const send = useCallback(async () => {
@@ -211,8 +207,8 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       const am = processResponse(content);
       setMsgs(p => [...p, am]); persist(am);
       if (autoRef.current) {
-        const planDone = !(am.meta as any)?.plan || ((am.meta as any).plan.steps as AgentStep[])?.every((s: AgentStep) => s.status==='done');
-        if (planDone) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
+        const allDone = !(am.meta as any)?.plan || ((am.meta as any).plan.steps as AgentStep[])?.every((s: AgentStep) => s.status==='done');
+        if (allDone) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
         else setTimeout(() => autoContinue(am), 1500);
       }
     } catch { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
@@ -229,23 +225,23 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
   }, [streaming, docId, persist, callAi, processResponse]);
 
   const acceptAction = useCallback(async (action: ParsedAction) => {
-    setPendingActionId(`${action.type}-${Date.now()}`);
+    setPendingActionId(action.type+'-'+Date.now());
     let r: Bridge.ActionResult = { success: false, message: '' };
     switch (action.type) { case 'replace': r = Bridge.actionReplace(action.payload.target||'', action.content); break; case 'rewrite': r = Bridge.actionRewrite(action.payload.target||'', action.content); break; case 'delete': r = Bridge.actionDelete(action.payload.target||''); break; }
     setPendingActionId(null);
-    const fb: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:`操作已完成：${r.message}。请继续下一步。`, createdAt:new Date().toISOString() };
+    const fb: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:'操作已完成：'+r.message+'。请继续下一步。', createdAt:new Date().toISOString() };
     const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
     try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch {}
   }, [docId, persist, callAi, processResponse]);
 
-  const rejectAction = useCallback(async (action: ParsedAction) => {
+  const rejectAction = useCallback(async (_action: ParsedAction) => {
     const fb: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:'我拒绝了那个操作。请提供替代方案。', createdAt:new Date().toISOString() };
     const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
     try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch {}
   }, [docId, persist, callAi, processResponse]);
 
   const handleControlOverride = useCallback(async (instr: string) => {
-    const cm: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:`（打断当前任务）${instr}`, createdAt:new Date().toISOString() };
+    const cm: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:'（打断当前任务）'+instr, createdAt:new Date().toISOString() };
     const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
     try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); setCbState(p => ({...p, status:'executing' })); } catch {}
   }, [docId, persist, callAi, processResponse]);
