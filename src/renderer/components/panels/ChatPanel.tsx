@@ -1,13 +1,5 @@
 /**
  * ChatPanel — AI Agent v4（控制栏 + 实时反馈版）
- *
- * - 多轮对话 + 流式 AI 回复
- * - AI 反问 → 任务计划 → 逐步执行
- * - <action> 标签直接操作编辑器 + 控制面板
- * - 智能分级确认（安全自动 / 修改确认）
- * - 自动模式全自主执行
- * - 实时编辑器反馈（高亮闪烁 + 滚动）
- * - 执行控制栏（中断 / 修改指令 / 进度展示）
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
@@ -65,7 +57,7 @@ function parseTags(content: string): { pure: string; plan: { title: string; step
 
 function renderMD(text: string): string {
   let h = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _l, code) => `<pre><code>${code.trim()}</code></pre>`);
+  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _l, code: string) => `<pre><code>${code.trim()}</code></pre>`);
   h = h.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
   h = h.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>').replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
   return h.split(/\n\n+/).map(b => { const t = b.trim(); if (!t) return ''; if (t.startsWith('<pre>') || t.startsWith('<ul>')) return t; return `<p>${t.replace(/\n/g, '<br/>')}</p>`; }).join('\n');
@@ -98,9 +90,10 @@ const PlanCard: React.FC<{ title: string; steps: AgentStep[]; onStart: () => voi
 );
 
 const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () => void; onAccept: (a: ParsedAction) => void; onReject: (a: ParsedAction) => void; pendingId: string | null }> = ({ msg, isLast, onPlanStart, onAccept, onReject, pendingId }) => {
-  const isU = msg.role === 'user'; const meta = msg.meta;
+  const isU = msg.role === 'user';
+  const meta = msg.meta as any;
   const time = (() => { try { return new Date(msg.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } })();
-  const actions = useMemo(() => meta?.actions ? (meta.actions as ParsedAction[]) : [], [meta?.actions]);
+  const actions: ParsedAction[] = useMemo(() => meta?.actions || [], [meta?.actions]);
   return (<div className={`pn-chat-msg pn-chat-msg--${msg.role}`}><div className="pn-chat-msg__avatar">{isU?'我':'AI'}</div><div style={{ minWidth:0 }}>
     {!isU && meta?.thinking && <ThinkingBlock content={meta.thinking} />}
     {!isU && meta?.plan && isLast && <PlanCard title={meta.plan.title} steps={meta.plan.steps as AgentStep[]} onStart={onPlanStart} />}
@@ -160,7 +153,6 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     finally { setStreaming(false); }
   }, [getDocumentContent]);
 
-  // Execute actions with visual feedback
   const execActions = useCallback((actions: ParsedAction[]): string[] => {
     const results: string[] = [];
     for (const a of actions) {
@@ -187,23 +179,10 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     if (plan) meta.plan = plan; if (thinking) meta.thinking = thinking;
     const confirm = actions.filter(a => getSafety(a.type)==='confirm' && !autoRef.current);
     if (confirm.length) meta.actions = confirm;
-    // Execute safe/auto actions now
     const executable = actions.filter(a => getSafety(a.type)==='safe' || (autoRef.current && getSafety(a.type)==='confirm'));
     if (executable.length) { const results = execActions(executable); if (results.length) meta.actionResults = results; setCbState(p => ({...p, completedSteps:p.completedSteps+executable.length })); }
     return { id: msgId(), documentId: docId!, role: 'assistant' as const, content: raw, createdAt: new Date().toISOString(), meta };
   }, [docId, execActions]);
-
-  // Override handler for control bar
-  const handleOverride = useCallback((instruction: string) => {
-    setInput(instruction);
-    // Don't auto-send, let user press Enter
-    // But we can simulate: fill input then auto-send
-    setTimeout(() => {
-      const txt = instruction.trim();
-      if (!txt || !docId) return;
-      // We need to send from outside — let's set input and trigger
-    }, 100);
-  }, []);
 
   const send = useCallback(async () => {
     const t = input.trim(); if (!t||streaming||!docId) return; setInput('');
@@ -215,7 +194,7 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       const content = await callAi(cur);
       const am = processResponse(content);
       setMsgs(p => [...p, am]); persist(am);
-      if (autoRef.current && am.meta?.plan) setTimeout(() => autoContinue(am), 1000);
+      if (autoRef.current && (am.meta as any)?.plan) setTimeout(() => autoContinue(am), 1000);
       else if (!autoRef.current) setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
     } catch (err: any) {
       setMsgs(p => [...p, { id:msgId(), documentId:docId, role:'assistant', content:'抱歉：'+(err?.message||'未知错误'), createdAt:new Date().toISOString(), meta:{ kind:'normal', pureContent:'抱歉：'+(err?.message||'未知错误') } }]);
@@ -232,9 +211,8 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       const am = processResponse(content);
       setMsgs(p => [...p, am]); persist(am);
       if (autoRef.current) {
-        // Check if all steps done
-        const allDone = !am.meta?.plan || am.meta.plan.steps.every((s: AgentStep) => s.status === 'done');
-        if (allDone) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
+        const planDone = !(am.meta as any)?.plan || ((am.meta as any).plan.steps as AgentStep[])?.every((s: AgentStep) => s.status==='done');
+        if (planDone) { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
         else setTimeout(() => autoContinue(am), 1500);
       }
     } catch { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }
@@ -244,16 +222,10 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     if (streaming||!docId) return;
     const cm: ChatMessage = { id:msgId(), documentId:docId, role:'user', content:'开始执行计划', createdAt:new Date().toISOString() };
     const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
-    // Set up control bar with plan info
     const lastMsg = msgsRef.current[msgsRef.current.length-1];
-    const plan = lastMsg?.meta?.plan;
+    const plan = (lastMsg?.meta as any)?.plan;
     if (plan) setCbState({ visible:true, status:'executing', currentStep:plan.steps[0]?.title||'', totalSteps:plan.steps.length, completedSteps:0 });
-    try {
-      const content = await callAi(cur);
-      const am = processResponse(content);
-      setMsgs(p => [...p, am]); persist(am);
-      if (!autoRef.current) setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 });
-    } catch {}
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); if (!autoRef.current) setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); } catch {}
   }, [streaming, docId, persist, callAi, processResponse]);
 
   const acceptAction = useCallback(async (action: ParsedAction) => {
@@ -272,16 +244,10 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch {}
   }, [docId, persist, callAi, processResponse]);
 
-  // Handle override input from control bar
   const handleControlOverride = useCallback(async (instr: string) => {
     const cm: ChatMessage = { id:msgId(), documentId:docId!, role:'user', content:`（打断当前任务）${instr}`, createdAt:new Date().toISOString() };
     const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
-    try {
-      const content = await callAi(cur);
-      const am = processResponse(content);
-      setMsgs(p => [...p, am]); persist(am);
-      setCbState(p => ({...p, status:'executing' }));
-    } catch {}
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); setCbState(p => ({...p, status:'executing' })); } catch {}
   }, [docId, persist, callAi, processResponse]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => { if (e.key==='Enter'&&!e.shiftKey) { e.preventDefault(); send(); } }, [send]);
@@ -296,7 +262,6 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       <textarea className="pn-chat__input" value={input} onChange={onInputC} onKeyDown={onKeyDown} placeholder={autoMode?'自动模式运行中…':'描述你的写作需求…'} rows={1} disabled={streaming||autoMode}/>
       <button className="pn-chat__send" onClick={send} disabled={streaming||autoMode||!input.trim()} title="发送"><SendIcon/></button>
     </div>
-    {/* Execution control bar */}
     <AgentControlBar state={cbState} onStop={() => { setAutoMode(false); setCbState({ visible:false, status:'idle', currentStep:'', totalSteps:0, completedSteps:0 }); }} onOverride={handleControlOverride} />
   </div></Panel>);
 };
