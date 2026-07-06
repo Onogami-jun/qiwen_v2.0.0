@@ -14,28 +14,7 @@ import * as Bridge from './editorBridge';
 import ActionConfirm from './ActionConfirm';
 import AgentControlBar, { type ControlBarState } from './AgentControlBar';
 
-const AGENT_PROMPT = `你是启文（QiWen Writer）的内置 AI Agent。你可以**直接操作编辑器**来完成写作任务。
-
-## 工作流程
-1. 需求不清晰时先提问（最多3个）→ 生成任务计划
-2. <thinking>思考</thinking> → 使用 action 标签操作编辑器 → 汇报结果
-3. 每步完成后等待用户确认（除非用户开启自动模式）
-
-## 可用 Action
-- <action type="append" title="节标题">内容</action> — 末尾追加（自动）
-- <action type="insert">内容</action> — 光标插入（自动）
-- <action type="replace" target="原文片段">新内容</action> — 替换（确认）
-- <action type="rewrite" target="段落关键词">改写内容</action> — 改写（确认）
-- <action type="delete" target="原文片段"></action> — 删除（确认）
-
-## 任务计划格式
-<plan><title>标题</title><step id="1">步骤</step><step id="2">步骤</step></plan>
-
-## 重要
-- 安全操作（append/insert）直接执行
-- 修改操作展示 diff 等用户确认
-- 用户说"自动模式"→ 全自主执行直到叫停
-- 保持 Markdown 格式`;
+const AGENT_PROMPT = '你是启文（QiWen Writer）的内置 AI Agent。你可以直接操作编辑器来完成写作任务。\n\n## 工作流程\n1. 需求不清晰时先提问（最多3个）→ 生成任务计划\n2. <thinking>思考</thinking> → 使用 action 标签操作编辑器 → 汇报结果\n3. 每步完成后等待用户确认（除非用户开启自动模式）\n\n## 可用 Action\n- <action type="append" title="节标题">内容</action> — 末尾追加（自动）\n- <action type="insert">内容</action> — 光标插入（自动）\n- <action type="replace" target="原文片段">新内容</action> — 替换（确认）\n- <action type="rewrite" target="段落关键词">改写内容</action> — 改写（确认）\n- <action type="delete" target="原文片段"></action> — 删除（确认）\n\n## 任务计划格式\n<plan><title>标题</title><step id="1">步骤</step><step id="2">步骤</step></plan>\n\n## 重要\n- 安全操作（append/insert）直接执行\n- 修改操作展示 diff 等用户确认\n- 用户说"自动模式"→ 全自主执行直到叫停\n- 保持 Markdown 格式';
 
 function parseTags(content: string): { pure: string; plan: { title: string; steps: AgentStep[] } | null; thinking: string | null; actions: ParsedAction[] } {
   const pm = content.match(/<plan>([\s\S]*?)<\/plan>/);
@@ -55,16 +34,14 @@ function parseTags(content: string): { pure: string; plan: { title: string; step
 
 function renderMD(text: string): string {
   let h = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _l, code: string) => `<pre><code>${code.trim()}</code></pre>`);
+  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_, _l, code: string) => '<pre><code>' + code.trim() + '</code></pre>');
   h = h.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
   h = h.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>').replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  return h.split(/\n\n+/).map(b => { const t = b.trim(); if (!t) return ''; if (t.startsWith('<pre>') || t.startsWith('<ul>')) return t; return `<p>${t.replace(/\n/g, '<br/>')}</p>`; }).join('\n');
+  return h.split(/\n\n+/).map(b => { const t = b.trim(); if (!t) return ''; if (t.startsWith('<pre>') || t.startsWith('<ul>')) return t; return '<p>' + t.replace(/\n/g, '<br/>') + '</p>'; }).join('\n');
 }
 
 const SendIcon = () => (<svg className="pn-chat__send-icon" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 5.5L2 14l3-6.5L2 2z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/></svg>);
 const EmptyIcon = () => (<svg className="pn-chat__empty-icon" viewBox="0 0 48 48" fill="none"><rect x="6" y="8" width="36" height="28" rx="4" stroke="currentColor" strokeWidth="2"/><circle cx="16" cy="22" r="3" fill="currentColor"/><circle cx="24" cy="22" r="3" fill="currentColor"/><circle cx="32" cy="22" r="3" fill="currentColor"/></svg>);
-
-// ── Thinking Block with live typewriter + auto-collapse ─────
 
 const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
   const [open, setOpen] = useState(true);
@@ -72,23 +49,16 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
   const done = pos >= content.length;
   const prevContent = useRef(content);
 
-  // Reset when content changes
   useEffect(() => {
-    if (prevContent.current !== content) {
-      setPos(0);
-      setOpen(true);
-      prevContent.current = content;
-    }
+    if (prevContent.current !== content) { setPos(0); setOpen(true); prevContent.current = content; }
   }, [content]);
 
-  // Typewriter tick
   useEffect(() => {
     if (done || !open) return;
     const t = setTimeout(() => setPos(p => Math.min(p + 5, content.length)), 10);
     return () => clearTimeout(t);
   }, [pos, content.length, done, open]);
 
-  // Auto-collapse after done
   useEffect(() => {
     if (!done || !open) return;
     const t = setTimeout(() => setOpen(false), 4000);
@@ -97,26 +67,25 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
 
   const text = content.slice(0, pos);
 
-  return (<div style={{ margin: '4px 0' }}>
-    <div onClick={() => setOpen(!open)} className="pn-thinking__toggle">
-      <span className="pn-thinking__arrow" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
-      思考过程
-      {!done && <span className="pn-thinking__spinner"/>}
-    </div>
-    {open && <div className="pn-thinking">
-      <div className="pn-thinking__text">
-        {text}
-        {!done && <span className="pn-thinking__cursor">|</span>}
-      </div>
-    </div>}
-  </div>);
+  return React.createElement('div', { style: { margin: '4px 0' } },
+    React.createElement('div', {
+      onClick: () => setOpen(!open), className: 'pn-thinking__toggle',
+    }, React.createElement('span', { className: 'pn-thinking__arrow', style: { transform: open ? 'rotate(90deg)' : 'none' } }, '▶'),
+      '思考过程',
+      !done ? React.createElement('span', { className: 'pn-thinking__spinner' }) : null,
+    ),
+    open ? React.createElement('div', { className: 'pn-thinking' },
+      React.createElement('div', { className: 'pn-thinking__text' },
+        text,
+        !done ? React.createElement('span', { className: 'pn-thinking__cursor' }, '|') : null,
+      ),
+    ) : null,
+  );
 };
-
-// ── Plan Card ────────────────────────────────────────────────
 
 const PlanCard: React.FC<{ title: string; steps: AgentStep[]; onStart: () => void }> = ({ title, steps, onStart }) => (
   <div className="pn-plan-card">
-    <div className="pn-plan-card__title">📋 {title}</div>
+    <div className="pn-plan-card__title">{'📋 '}{title}</div>
     {steps.map(s => (
       <div key={s.id} className="pn-plan-card__step" style={{ opacity: s.status === 'done' ? 0.5 : 1 }}>
         <span className="pn-plan-card__dot" style={{
@@ -129,8 +98,6 @@ const PlanCard: React.FC<{ title: string; steps: AgentStep[]; onStart: () => voi
     <button className="pn-plan-card__btn" onClick={onStart}>开始执行</button>
   </div>
 );
-
-// ── Message Bubble ───────────────────────────────────────────
 
 const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () => void; onAccept: (a: ParsedAction) => void; onReject: (a: ParsedAction) => void; pendingId: string | null }> = ({ msg, isLast, onPlanStart, onAccept, onReject, pendingId }) => {
   const isU = msg.role === 'user';
@@ -146,7 +113,7 @@ const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () =
         <ActionConfirm key={a.type + '-' + i} action={a} pending={pendingId != null} onAccept={() => onAccept(a)} onReject={() => onReject(a)} />
       ))}
       {!isU && meta?.actionResults && (meta.actionResults as string[]).map((r: string, i: number) => (
-        <div key={i} className="pn-action-ok"><span>✓</span><span>{r}</span></div>
+        <div key={i} className="pn-action-ok"><span>{'✓'}</span><span>{r}</span></div>
       ))}
       {meta?.pureContent || msg.content ? (
         <div className="pn-chat-msg__bubble">{isU ? msg.content : <div dangerouslySetInnerHTML={{ __html: renderMD(meta?.pureContent || msg.content) }} />}</div>
@@ -155,8 +122,6 @@ const MsgBubble: React.FC<{ msg: ChatMessage; isLast: boolean; onPlanStart: () =
     </div>
   </div></div>);
 };
-
-// ── Main Panel ───────────────────────────────────────────────
 
 interface Props { node: LeafPanel; getDocumentContent?: () => string; }
 
@@ -179,24 +144,26 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       getHTML: () => getDocumentContent?.() || '',
       insert: (c: string) => { const ed = (window as any).__activeEditor; if (ed) { try { ed.chain().focus().insertContent(c).run(); return true; } catch { return false; } } return false; },
       replaceAll: (h: string) => { const ed = (window as any).__activeEditor; if (ed) { try { ed.chain().focus().selectAll().insertContent(h).run(); return true; } catch { return false; } } return false; },
-      findAndReplace: (s: string, r: string) => { const ed = (window as any).__activeEditor; if (!ed) return false; try { const t = ed.getText() || ''; if (t.includes(s)) { const nh = (ed.getHTML() || '').split(s).join(r); ed.chain().focus().selectAll().insertContent(nh).run(); return true; } } catch { } try { ed.chain().focus().insertContent(r).run(); return true; } catch { return false; } },
-      getSelection: () => { try { return (window as any).__activeEditor?.state?.selection?.content?.()?.content?.textBetween?.() || ''; } catch { return ''; } },
+      findAndReplace: (s: string, r: string) => { const ed = (window as any).__activeEditor; if (!ed) return false; try { const t = ed.getText() || ''; if (t.includes(s)) { const nh = (ed.getHTML() || '').split(s).join(r); ed.chain().focus().selectAll().insertContent(nh).run(); return true; } } catch (_) { /* ok */ } try { ed.chain().focus().insertContent(r).run(); return true; } catch (_) { return false; } },
+      getSelection: () => { try { return (window as any).__activeEditor?.state?.selection?.content?.()?.content?.textBetween?.() || ''; } catch (_) { return ''; } },
     });
     return () => Bridge.unregisterEditor('document');
   }, [getDocumentContent]);
 
-  useEffect(() => { if (!docId || loaded) return; let c = false; (async () => { try { const rows = await ipc.invoke<any[]>('db:getChatMessages', { documentId: docId, limit: 100 }); if (!c && rows?.length) setMsgs(rows.map((r: any) => ({ id: r.id, documentId: r.document_id ?? r.documentId, role: r.role, content: r.content, createdAt: r.created_at ?? r.createdAt, meta: typeof r.meta === 'string' ? JSON.parse(r.meta || '{}') : (r.meta || undefined) }))); } catch { } finally { if (!c) setLoaded(true); } })(); return () => { c = true; }; }, [docId, loaded]);
+  useEffect(() => { if (!docId || loaded) return; let c = false; (async () => { try { const rows = await ipc.invoke<any[]>('db:getChatMessages', { documentId: docId, limit: 100 }); if (!c && rows?.length) setMsgs(rows.map((r: any) => ({ id: r.id, documentId: r.document_id ?? r.documentId, role: r.role, content: r.content, createdAt: r.created_at ?? r.createdAt, meta: typeof r.meta === 'string' ? JSON.parse(r.meta || '{}') : (r.meta || undefined) }))); } catch (_) { /* ok */ } finally { if (!c) setLoaded(true); } })(); return () => { c = true; }; }, [docId, loaded]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
-  const persist = useCallback(async (m: ChatMessage) => { try { await ipc.invoke('db:saveChatMessage', m); } catch { } }, []);
+  const persist = useCallback(async (m: ChatMessage) => { try { await ipc.invoke('db:saveChatMessage', m); } catch (_) { /* ok */ } }, []);
 
   const callAi = useCallback(async (toSend: ChatMessage[]): Promise<string> => {
     setStreaming(true); setCbState(p => ({ ...p, status: 'thinking', visible: true }));
     try {
-      const doc = getDocumentContent?.() ?? '', pref = await buildSystemPrompt();
-      const sys = [pref, AGENT_PROMPT]; if (doc) sys.push('\n当前文档：\n```\n' + doc.slice(0, 3000) + '\n```');
-      if (autoRef.current) sys.push('\n用户已开启自动模式，自主执行无需确认。');
+      const doc = getDocumentContent?.() ?? '';
+      const pref = await buildSystemPrompt();
+      const sysParts = [pref, AGENT_PROMPT];
+      if (doc) sysParts.push('\n当前文档：\n' + doc.slice(0, 3000));
+      if (autoRef.current) sysParts.push('\n用户已开启自动模式，自主执行无需确认。');
       const recent = toSend.slice(-25).map(m => ({ role: m.role, content: m.content }));
-      const resp = await ipc.invoke<any>('ai:chat-stream', { messages: [{ role: 'system', content: sys.filter(Boolean).join('\n') }, ...recent], apiKey: '', model: '' });
+      const resp = await ipc.invoke<any>('ai:chat-stream', { messages: [{ role: 'system', content: sysParts.filter(Boolean).join('\n') }, ...recent], apiKey: '', model: '' });
       const content = typeof resp === 'string' ? resp : (resp?.content || resp?.text || JSON.stringify(resp));
       setCbState(p => ({ ...p, status: 'executing' }));
       return content;
@@ -209,7 +176,7 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       if (getSafety(a.type) !== 'safe' && !autoRef.current) continue;
       let r: Bridge.ActionResult = { success: false, message: '' };
       switch (a.type) { case 'append': r = Bridge.actionAppend(a.payload.title || '', a.content); break; case 'insert': r = Bridge.actionInsert(a.content); break; case 'replace': r = Bridge.actionReplace(a.payload.target || '', a.content); break; case 'rewrite': r = Bridge.actionRewrite(a.payload.target || '', a.content); break; case 'delete': r = Bridge.actionDelete(a.payload.target || ''); break; }
-      if (r.message) results.push(r.success ? r.message : '❌ ' + r.message);
+      if (r.message) results.push(r.success ? r.message : 'FAIL:' + r.message);
       setCbState(p => ({ ...p, status: 'executing', currentStep: r.message }));
     }
     Bridge.flashEditorChange(); Bridge.scrollToChange();
@@ -241,7 +208,7 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
       if (autoRef.current && (am.meta as any)?.plan) setTimeout(() => autoContinue(am), 1000);
       else if (!autoRef.current) setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 });
     } catch (err: any) {
-      setMsgs(p => [...p, { id: msgId(), documentId: docId, role: 'assistant', content: '抱歉：' + (err?.message || '未知错误'), createdAt: new Date().toISOString(), meta: { kind: 'normal', pureContent: '抱歉：' + (err?.message || '未知错误') } }]);
+      setMsgs(p => [...p, { id: msgId(), documentId: docId, role: 'assistant', content: 'FAIL:' + (err?.message || 'unknown'), createdAt: new Date().toISOString(), meta: { kind: 'normal', pureContent: 'FAIL:' + (err?.message || 'unknown') } }]);
       setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 });
     }
   }, [input, streaming, docId, persist, callAi, processResponse]);
@@ -259,7 +226,7 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
         if (allDone) { setAutoMode(false); setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 }); }
         else setTimeout(() => autoContinue(am), 1500);
       }
-    } catch { setAutoMode(false); setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 }); }
+    } catch (_) { setAutoMode(false); setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 }); }
   }, [docId, callAi, processResponse, persist]);
 
   const startPlan = useCallback(async () => {
@@ -268,7 +235,7 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
     const plan = ((msgsRef.current[msgsRef.current.length - 1]?.meta) as any)?.plan;
     if (plan) setCbState({ visible: true, status: 'executing', currentStep: plan.steps[0]?.title || '', totalSteps: plan.steps.length, completedSteps: 0 });
-    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); if (!autoRef.current) setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 }); } catch { }
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); if (!autoRef.current) setCbState({ visible: false, status: 'idle', currentStep: '', totalSteps: 0, completedSteps: 0 }); } catch (_) { /* ok */ }
   }, [streaming, docId, persist, callAi, processResponse]);
 
   const acceptAction = useCallback(async (action: ParsedAction) => {
@@ -278,19 +245,19 @@ const ChatPanel: React.FC<Props> = ({ node, getDocumentContent }) => {
     setPendingActionId(null);
     const fb: ChatMessage = { id: msgId(), documentId: docId!, role: 'user', content: '操作已完成：' + r.message + '。请继续下一步。', createdAt: new Date().toISOString() };
     const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
-    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch { }
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch (_) { /* ok */ }
   }, [docId, persist, callAi, processResponse]);
 
   const rejectAction = useCallback(async (_action: ParsedAction) => {
     const fb: ChatMessage = { id: msgId(), documentId: docId!, role: 'user', content: '我拒绝了那个操作。请提供替代方案。', createdAt: new Date().toISOString() };
     const cur = [...msgsRef.current, fb]; setMsgs(cur); persist(fb);
-    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch { }
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); } catch (_) { /* ok */ }
   }, [docId, persist, callAi, processResponse]);
 
   const handleControlOverride = useCallback(async (instr: string) => {
     const cm: ChatMessage = { id: msgId(), documentId: docId!, role: 'user', content: '（打断当前任务）' + instr, createdAt: new Date().toISOString() };
     const cur = [...msgsRef.current, cm]; setMsgs(cur); persist(cm);
-    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); setCbState(p => ({ ...p, status: 'executing' })); } catch { }
+    try { const content = await callAi(cur); const am = processResponse(content); setMsgs(p => [...p, am]); persist(am); setCbState(p => ({ ...p, status: 'executing' })); } catch (_) { /* ok */ }
   }, [docId, persist, callAi, processResponse]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }, [send]);
