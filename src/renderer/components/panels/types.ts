@@ -15,9 +15,7 @@ export interface ChatMetadata {
   plan?: { title: string; steps: AgentStep[] };
   thinking?: string;
   pureContent?: string;
-  /** Parsed actions from AI response */
   actions?: unknown;
-  /** Action execution result messages */
   actionResults?: string[];
 }
 
