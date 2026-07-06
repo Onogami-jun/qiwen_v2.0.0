@@ -4,9 +4,9 @@
  */
 import React, { useEffect, useState, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import type { RootState, AppDispatch } from '../../../store';
-import { updateDrag, endDrag, splitPanel } from '../../../store/slices/panelLayoutSlice';
-import type { PanelLayoutState, DropEdge, PanelType } from '../../../store/slices/panelLayoutSlice';
+import type { RootState, AppDispatch } from '../../store';
+import { updateDrag, endDrag, splitPanel } from '../../store/slices/panelLayoutSlice';
+import type { PanelLayoutState, DropEdge, PanelType } from '../../store/slices/panelLayoutSlice';
 import { findNodeById } from './types';
 
 const EDGE_PX = 35;

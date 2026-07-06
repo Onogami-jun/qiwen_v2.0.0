@@ -3,8 +3,8 @@
  */
 import React, { useCallback, useRef } from 'react';
 import { useDispatch } from 'react-redux';
-import type { AppDispatch } from '../../../store';
-import { resizePanel } from '../../../store/slices/panelLayoutSlice';
+import type { AppDispatch } from '../../store';
+import { resizePanel } from '../../store/slices/panelLayoutSlice';
 import type { SplitPanel as SplitPanelType, PanelNode } from './types';
 import { renderPanelNode } from './PanelGrid';
 

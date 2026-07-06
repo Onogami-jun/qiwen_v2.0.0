@@ -7,9 +7,9 @@ import { useSelector } from 'react-redux';
 import Panel from './Panel';
 import type { LeafPanel as LeafPanelType, ChatMessage } from './types';
 import { msgId } from './types';
-import type { RootState } from '../../../store';
-import { ipc } from '../../../utils/ipc';
-import { buildSystemPrompt } from '../../../utils/writingPreferences';
+import type { RootState } from '../../store';
+import { ipc } from '../../utils/ipc';
+import { buildSystemPrompt } from '../../utils/writingPreferences';
 
 // ── Minimal Markdown → HTML ──────────────────────────────────
 

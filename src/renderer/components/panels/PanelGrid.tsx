@@ -4,14 +4,14 @@
  */
 import React, { useEffect, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import type { RootState, AppDispatch } from '../../../store';
-import { initLayout } from '../../../store/slices/panelLayoutSlice';
+import type { RootState, AppDispatch } from '../../store';
+import { initLayout } from '../../store/slices/panelLayoutSlice';
 import type { PanelNode, LeafPanel, SplitPanel as SplitPanelType } from './types';
 import SplitPane from './SplitPane';
 import EditorPanel from './EditorPanel';
 import ChatPanel from './ChatPanel';
 import DragOverlay from './DragOverlay';
-import { ipc } from '../../../utils/ipc';
+import { ipc } from '../../utils/ipc';
 
 // ── Panel node renderer (exported for SplitPane) ────────────
 

@@ -3,8 +3,8 @@
  */
 import React, { useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import type { RootState, AppDispatch } from '../../../store';
-import { startDrag, closePanel, setActivePanel } from '../../../store/slices/panelLayoutSlice';
+import type { RootState, AppDispatch } from '../../store';
+import { startDrag, closePanel, setActivePanel } from '../../store/slices/panelLayoutSlice';
 import type { LeafPanel as LeafPanelType } from './types';
 
 // ── Icons ────────────────────────────────────────────────────
