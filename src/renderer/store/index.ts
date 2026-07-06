@@ -13,6 +13,7 @@ import aiReducer from './slices/aiSlice';
 import templatesReducer from './slices/templatesSlice';
 import presentationsReducer from './slices/presentationsSlice';
 import authReducer from './slices/authSlice';
+import panelLayoutReducer from './slices/panelLayoutSlice';
 
 const appPersistConfig = {
   key: 'qiwen-app',
@@ -36,8 +37,9 @@ const rootReducer = combineReducers({
   references: referencesReducer,
   plugins:    persistReducer(pluginsPersistConfig, pluginsReducer),
   ai:         aiReducer,
-  auth:       authReducer,
-  templates:     templatesReducer,
+  auth:         authReducer,
+  panelLayout:  panelLayoutReducer,
+  templates:    templatesReducer,
   presentations: presentationsReducer,
 });
 

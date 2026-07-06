@@ -11,8 +11,10 @@ import { RightPanel } from '../sidebar/RightPanel';
 import { DocumentTitle } from './DocumentTitle';
 import { FindReplaceBar } from './FindReplaceBar';
 import { toggleFocusMode } from '../../store/slices/appSlice';
+import PanelGrid from '../panels/PanelGrid';
 
 import { useT } from '../../i18n';
+import '../../styles/panels.css';
 
 export type EditorMode = 'edit' | 'preview' | 'focus';
 
@@ -68,6 +70,15 @@ export const EditorArea: React.FC = () => {
     return () => clearTimeout(retryTimer);
   }, [activeTab?.id]); // eslint-disable-line
 
+  const getDocumentContent = useCallback((): string => {
+    if (!activeDoc?.content) return \'\';
+    return activeDoc.content
+      .replace(/<br\s*\/?>/gi, \'\n\').replace(/<\/p>/gi, \'\n\')
+      .replace(/<[^>]+>/g, \' \').replace(/&nbsp;/g, \' \')
+      .replace(/&lt;/g, \'<\').replace(/&gt;/g, \'>\').replace(/&amp;/g, \'&\')
+      .replace(/\s+/g, \' \').trim().slice(0, 5000);
+  }, [activeDoc?.content]);
+
   const handleTitleChange = useCallback(async (title: string) => {
     if (!activeDoc) return;
     await dispatch(updateDocument({ id: activeDoc.id, title }));
@@ -120,7 +131,10 @@ export const EditorArea: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    {/* 查找替换浮层 */}
+                    {activeDoc ? (
+                  <PanelGrid documentId={activeDoc.id} getDocumentContent={getDocumentContent}>
+                    <div style={{ height:"100%", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
+                {/* 查找替换浮层 */}
                     <FindReplaceBar />
                     <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
                     <div style={{
@@ -185,8 +199,16 @@ export const EditorArea: React.FC = () => {
                       documentId={activeDoc.id}
                       collaborationEnabled={isCollabOn}
                     />
+                    </div>
+                  </PanelGrid>
+                ) : (
+                  <>
+                    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-tertiary)" }}>
+                      <div style={{ width:24, height:24, borderRadius:"50%", border:"2px solid var(--border)", borderTopColor:"var(--accent)", animation:"spin 0.7s linear infinite" }} />
+                    </div>
                   </>
                 )}
+                  </>
               </motion.div>
             ) : activeTab && failedDocIds[activeTab.documentId] ? (
               <motion.div

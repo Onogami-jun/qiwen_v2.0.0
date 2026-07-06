@@ -69,12 +69,14 @@ async function initDB() {
     const { registerTemplateHandlers } = require('../src/main/ipc/templates');
     const { registerRdmHandlers }      = require('../src/main/ipc/rdm');
     const { registerPresentationHandlers } = require('../src/main/ipc/presentations');
+    const { registerChatHandlers } = require('../src/main/ipc/chat');
 
     registerDocumentHandlers();
     registerWorkspaceHandlers();
     registerSettingsHandlers();
     registerRdmHandlers(dbModule.getDb, dbModule.saveDatabase);
     registerPresentationHandlers();
+    registerChatHandlers();
 
     // ── App State (文件级持久化，不依赖 sqlite) ──────────
     // 用于记录 onboarding 完成状态和最后使用的 workspaceId

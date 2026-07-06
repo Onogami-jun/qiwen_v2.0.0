@@ -274,6 +274,30 @@ CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
   content='',
   tokenize='unicode61 remove_diacritics 1'
 );
+
+-- v8: Panel System (panel_layouts, chat_messages, writing_preferences)
+CREATE TABLE IF NOT EXISTS panel_layouts (
+  document_id TEXT PRIMARY KEY,
+  layout_json TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_doc ON chat_messages(document_id, created_at);
+
+CREATE TABLE IF NOT EXISTS writing_preferences (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 `;
 
 // ── 迁移 ──────────────────────────────────────────────────────
@@ -329,7 +353,34 @@ const MIGRATIONS = [
    ALTER TABLE documents ADD COLUMN org_id TEXT DEFAULT NULL;
    CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(org_id);
    CREATE INDEX IF NOT EXISTS idx_documents_org ON documents(org_id);`,
+  // v8: Panel System
+  `CREATE TABLE IF NOT EXISTS panel_layouts (
+    document_id TEXT PRIMARY KEY,
+    layout_json TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_doc ON chat_messages(document_id, created_at);
+  CREATE TABLE IF NOT EXISTS writing_preferences (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  INSERT OR IGNORE INTO writing_preferences (key, value) VALUES
+    ('style', ''),
+    ('tone', ''),
+    ('length_preference', ''),
+    ('language', 'zh-CN'),
+    ('custom_instructions', '');`,
 ];
+
 
 // ── 初始化 ────────────────────────────────────────────────────
 
