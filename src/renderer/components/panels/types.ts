@@ -8,20 +8,17 @@ export interface SplitPanel { id: string; type: 'split'; direction: 'horizontal'
 export type PanelNode = LeafPanel | SplitPanel;
 export type DropEdge = 'left' | 'right' | 'top' | 'bottom';
 
-// ── Chat Message ────────────────────────────────────────────
-
 export type ChatRole = 'user' | 'assistant' | 'system';
 
-/** Extra data attached to a message for rich rendering */
 export interface ChatMetadata {
-  /** Message display type hint */
   kind?: 'normal' | 'plan' | 'thinking' | 'step_result';
-  /** Task plan data (when kind=plan) */
   plan?: { title: string; steps: AgentStep[] };
-  /** Thinking content for collapsible block */
   thinking?: string;
-  /** Content stripped of XML tags */
   pureContent?: string;
+  /** Parsed actions from AI response */
+  actions?: unknown;
+  /** Action execution result messages */
+  actionResults?: string[];
 }
 
 export interface AgentStep {
@@ -36,11 +33,8 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   createdAt: string;
-  /** Optional metadata for rich rendering (plan / thinking / etc.) */
   meta?: ChatMetadata;
 }
-
-// ── Helpers ──────────────────────────────────────────────────
 
 let _counter = 0;
 export function uid(): string { return `pn_${Date.now()}_${++_counter}`; }
