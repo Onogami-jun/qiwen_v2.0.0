@@ -19,8 +19,7 @@
 .pn-divider:hover { background:var(--accent, #c8a96e); }
 
 /* ── Drop Zone ─────────────────────────────────────────────── */
-.pn-drop-zone { position:fixed; background:rgba(200,169,110,0.15); border:2px dashed rgba(200,169,110,0.45); border-radius:8px; z-index:200; pointer-events:none; animation:pn-zone-pulse .8s ease-in-out infinite; }
-@keyframes pn-zone-pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+.pn-drop-zone { position:fixed; background:rgba(200,169,110,0.15); border:2px dashed rgba(200,169,110,0.45); border-radius:8px; z-index:200; pointer-events:none; }
 
 /* ── Drag Overlay ──────────────────────────────────────────── */
 .pn-drag-overlay { position:fixed; z-index:1000; pointer-events:none; opacity:.9; transform:translate(-50%,-50%); box-shadow:0 12px 40px rgba(0,0,0,.2); border-radius:8px; background:var(--bg-primary,#fff); min-width:220px; min-height:140px; display:flex; align-items:center; justify-content:center; border:2px solid var(--accent, #c8a96e); }
@@ -37,6 +36,15 @@
 .pn-panel__header:hover .pn-panel__header-close { opacity:1; }
 .pn-panel__header-close:hover { background:rgba(0,0,0,.06); color:var(--text-primary,#333); }
 .pn-panel__content { flex:1; overflow:hidden; position:relative; }
+
+/* ── Floating Window ───────────────────────────────────────── */
+.fp-window { pointer-events:auto; }
+.fp-window__inner { display:flex; flex-direction:column; height:100%; border-radius:10px; overflow:hidden; background:var(--bg-primary,#fff); box-shadow:0 8px 40px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08); border:1px solid var(--border,#e2e5e9); }
+.fp-window__titlebar { display:flex; align-items:center; height:36px; padding:0 12px; background:var(--accent,#c8a96e); cursor:move; user-select:none; flex-shrink:0; gap:8px; }
+.fp-window__title { flex:1; font-size:12px; font-weight:500; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.fp-window__close { width:22px; height:22px; display:flex; align-items:center; justify-content:center; border:none; background:rgba(255,255,255,.15); border-radius:4px; cursor:pointer; color:#fff; font-size:16px; line-height:1; flex-shrink:0; transition:background .15s; }
+.fp-window__close:hover { background:rgba(255,255,255,.3); }
+.fp-window__body { flex:1; overflow:hidden; position:relative; }
 
 /* ── Chat Panel ────────────────────────────────────────────── */
 .pn-chat { display:flex; flex-direction:column; height:100%; background:var(--bg-primary,#fff); }
@@ -74,7 +82,7 @@
 .pn-chat__send:disabled { opacity:.3; cursor:default; }
 .pn-chat__send-icon { width:15px; height:15px; }
 
-/* Streaming indicator */
+/* Streaming */
 .pn-chat-streaming { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:var(--text-tertiary,#999); }
 .pn-chat-streaming__dots { display:flex; gap:4px; }
 .pn-chat-streaming__dot { width:5px; height:5px; border-radius:50%; background:var(--text-tertiary,#999); animation:pn-bounce 1.2s ease-in-out infinite; }
