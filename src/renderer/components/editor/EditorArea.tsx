@@ -53,6 +53,21 @@ export const EditorArea: React.FC = () => {
   const activeDoc = activeTab ? openDocuments[activeTab.documentId] : null;
   const isSaving = activeTabId ? saving[activeTabId] : false;
 
+  const getDocumentContent = useCallback((): string => {
+    if (!activeDoc?.content) return '';
+    return activeDoc.content
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 5000);
+  }, [activeDoc?.content]);
+
   useEffect(() => {
     if (activeTab && !openDocuments[activeTab.documentId]) {
       dispatch(fetchDocument(activeTab.documentId));
@@ -69,15 +84,6 @@ export const EditorArea: React.FC = () => {
     }, 2000);
     return () => clearTimeout(retryTimer);
   }, [activeTab?.id]); // eslint-disable-line
-
-  const getDocumentContent = useCallback((): string => {
-    if (!activeDoc?.content) return \'\';
-    return activeDoc.content
-      .replace(/<br\s*\/?>/gi, \'\n\').replace(/<\/p>/gi, \'\n\')
-      .replace(/<[^>]+>/g, \' \').replace(/&nbsp;/g, \' \')
-      .replace(/&lt;/g, \'<\').replace(/&gt;/g, \'>\').replace(/&amp;/g, \'&\')
-      .replace(/\s+/g, \' \').trim().slice(0, 5000);
-  }, [activeDoc?.content]);
 
   const handleTitleChange = useCallback(async (title: string) => {
     if (!activeDoc) return;
@@ -130,85 +136,52 @@ export const EditorArea: React.FC = () => {
                     />
                   </div>
                 ) : (
-                  <>
-                    {activeDoc ? (
+                  /* 编辑模式 — 包进 PanelGrid（对话+编辑器分屏） */
                   <PanelGrid documentId={activeDoc.id} getDocumentContent={getDocumentContent}>
-                    <div style={{ height:"100%", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
-                {/* 查找替换浮层 */}
-                    <FindReplaceBar />
-                    <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-                    <div style={{
-                      padding: '32px 64px 0',
-                      maxWidth: 'calc(660px + 128px)',
-                      margin: '0 auto', width: '100%',
-                    }}>
-                      <DocumentTitle
-                        title={activeDoc.title}
-                        onChange={handleTitleChange}
-                        tags={activeDoc.tags}
-                        updatedAt={activeDoc.updatedAt}
+                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+                      {/* 查找替换浮层 */}
+                      <FindReplaceBar />
+                      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+                      <div style={{
+                        padding: '32px 64px 0',
+                        maxWidth: 'calc(660px + 128px)',
+                        margin: '0 auto', width: '100%',
+                      }}>
+                        <DocumentTitle
+                          title={activeDoc.title}
+                          onChange={handleTitleChange}
+                          tags={activeDoc.tags}
+                          updatedAt={activeDoc.updatedAt}
+                        />
+                      </div>
+                      {/* 右下角工具组 */}
+                      <div style={{ position: 'absolute', bottom: 16, right: 20, zIndex: 30, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {/* Typewriter 模式 */}
+                        <button onClick={() => setTypewriterMode(v => !v)} title="Typewriter 模式（当前行居中）"
+                          style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${typewriterMode ? 'rgba(var(--color-info-rgb), 0.4)' : 'var(--border)'}`, background: typewriterMode ? 'rgba(var(--color-info-rgb), 0.08)' : 'var(--bg-surface2)', color: typewriterMode ? 'var(--color-info)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
+                          ⌨ 打字机
+                        </button>
+                        {/* 专注模式 */}
+                        <button onClick={() => dispatch(toggleFocusMode())} title="专注模式 (F11)"
+                          style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${focusMode ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
+                          ◎ 专注
+                        </button>
+                        {/* 协作开关 */}
+                        {user && !isLocalMode && (
+                          <button onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)} title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-2xl)', fontSize: 11, border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`, background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)', color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'inherit', transition: 'background var(--dur-base) var(--ease-smooth), border-color var(--dur-base) var(--ease-smooth), color var(--dur-base) var(--ease-smooth)' }}>
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', animation: isCollabOn ? 'pulse 2s infinite' : 'none' }} />
+                            {isCollabOn ? '协作中' : '本地模式'}
+                          </button>
+                        )}
+                      </div>
+                      <MarkdownEditor
+                        documentId={activeDoc.id}
+                        collaborationEnabled={isCollabOn}
                       />
                     </div>
-                    {/* 右下角工具组 */}
-                    <div style={{ position: 'absolute', bottom: 16, right: 20, zIndex: 30, display: 'flex', gap: 8, alignItems: 'center' }}>
-                      {/* Typewriter 模式 */}
-                      <button onClick={() => setTypewriterMode(v => !v)} title="Typewriter 模式（当前行居中）"
-                        style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${typewriterMode ? 'rgba(var(--color-info-rgb), 0.4)' : 'var(--border)'}`, background: typewriterMode ? 'rgba(var(--color-info-rgb), 0.08)' : 'var(--bg-surface2)', color: typewriterMode ? 'var(--color-info)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
-                        ⌨ 打字机
-                      </button>
-                      {/* 专注模式 */}
-                      <button onClick={() => dispatch(toggleFocusMode())} title="专注模式 (F11)"
-                        style={{ padding: '4px 9px', borderRadius: 'var(--radius-2xl)', border: `1px solid ${focusMode ? 'rgba(var(--accent-rgb), 0.4)' : 'var(--border)'}`, background: focusMode ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--bg-surface2)', color: focusMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'background var(--dur-fast) var(--ease-smooth), border-color var(--dur-fast) var(--ease-smooth), color var(--dur-fast) var(--ease-smooth)' }}>
-                        ◎ 专注
-                      </button>
-                      {/* 协作开关 */}
-                      {user && !isLocalMode && (
-                        <button onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)} title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius-2xl)', fontSize: 11, border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`, background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)', color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'inherit', transition: 'background var(--dur-base) var(--ease-smooth), border-color var(--dur-base) var(--ease-smooth), color var(--dur-base) var(--ease-smooth)' }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)', animation: isCollabOn ? 'pulse 2s infinite' : 'none' }} />
-                          {isCollabOn ? '协作中' : '本地模式'}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* 协作开关按钮（右下角，仅登录后显示） - 已合并到上方工具组 */}
-                    {false && user && !isLocalMode && (
-                      <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 30 }}>
-                        <button
-                          onClick={() => setCollabOverride(v => v === null ? !isCollabOn : !v)}
-                          title={isCollabOn ? '点击关闭实时协作' : '点击开启实时协作'}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '5px 11px', borderRadius: 'var(--radius-2xl)', fontSize: 11.5,
-                            border: `1px solid ${isCollabOn ? 'rgba(var(--color-success-rgb), 0.35)' : 'var(--border)'}`,
-                            background: isCollabOn ? 'rgba(var(--color-success-rgb), 0.08)' : 'var(--bg-surface2)',
-                            color: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)',
-                            cursor: 'pointer', fontFamily: 'inherit', transition: 'background var(--dur-base) var(--ease-smooth), color var(--dur-base) var(--ease-smooth)',
-                          }}
-                        >
-                          <div style={{
-                            width: 6, height: 6, borderRadius: '50%',
-                            background: isCollabOn ? 'var(--color-success)' : 'var(--text-tertiary)',
-                            animation: isCollabOn ? 'pulse 2s infinite' : 'none',
-                          }} />
-                          {isCollabOn ? '协作中' : '本地模式'}
-                        </button>
-                      </div>
-                    )}
-                    <MarkdownEditor
-                      documentId={activeDoc.id}
-                      collaborationEnabled={isCollabOn}
-                    />
-                    </div>
                   </PanelGrid>
-                ) : (
-                  <>
-                    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-tertiary)" }}>
-                      <div style={{ width:24, height:24, borderRadius:"50%", border:"2px solid var(--border)", borderTopColor:"var(--accent)", animation:"spin 0.7s linear infinite" }} />
-                    </div>
-                  </>
                 )}
-                  </>
               </motion.div>
             ) : activeTab && failedDocIds[activeTab.documentId] ? (
               <motion.div
