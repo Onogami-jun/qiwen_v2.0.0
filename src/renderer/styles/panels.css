@@ -1,4 +1,4 @@
-/* Panel System Styles — 含 Agent UI */
+/* ── Existing panel styles (unchanged) ─────────────────────── */
 .pn-grid{display:flex;width:100%;height:100%;overflow:hidden;position:relative;background:var(--bg-primary,#fff)}
 .pn-split{display:flex;flex:1;min-width:0;min-height:0;position:relative}.pn-split--horizontal{flex-direction:row}.pn-split--vertical{flex-direction:column}
 .pn-split__child{overflow:hidden;position:relative;min-width:180px;min-height:100px}
@@ -20,7 +20,7 @@
 .pn-panel__header:hover .pn-panel__header-close{opacity:1}.pn-panel__header-close:hover{background:rgba(0,0,0,.06);color:var(--text-primary,#333)}
 .pn-panel__content{flex:1;overflow:hidden;position:relative}
 
-/* Floating Windows */
+/* Floating windows */
 .fp-window{pointer-events:auto}
 .fp-window__inner{display:flex;flex-direction:column;height:100%;border-radius:10px;overflow:hidden;background:var(--bg-primary,#fff);box-shadow:0 8px 40px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.08);border:1px solid var(--border,#e2e5e9)}
 .fp-window__titlebar{display:flex;align-items:center;height:36px;padding:0 12px;background:var(--accent,#c8a96e);cursor:move;user-select:none;flex-shrink:0;gap:8px}
@@ -29,7 +29,7 @@
 .fp-window__close:hover{background:rgba(255,255,255,.3)}
 .fp-window__body{flex:1;overflow:hidden;position:relative}
 
-/* Chat Panel */
+/* Chat */
 .pn-chat{display:flex;flex-direction:column;height:100%;background:var(--bg-primary,#fff)}
 .pn-chat__messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .pn-chat__empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-tertiary,#999);gap:10px;padding:24px;text-align:center}
@@ -63,10 +63,75 @@
 .pn-chat-streaming__dot:nth-child(2){animation-delay:.15s}.pn-chat-streaming__dot:nth-child(3){animation-delay:.3s}
 @keyframes pn-bounce{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1.2)}}
 
-/* ── Agent UI ──────────────────────────────────────────────── */
-@keyframes pn-pulse{0%,100%{opacity:1}50%{opacity:.35}}
-@keyframes pn-flash{0%{box-shadow:0 0 0 3px var(--accent,#c8a96e)}100%{box-shadow:0 0 0 0px transparent}}
+/* Action status */
+.pn-action-ok{font-size:11px;color:var(--color-success,#22c55e);padding:2px 0;display:flex;align-items:center;gap:4px}
 
-/* Control bar transitions */
-.ac-bar { animation: pn-bar-in .2s ease-out; }
-@keyframes pn-bar-in { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* ── Claude-style Thinking Block ───────────────────────────── */
+
+.pn-thinking__toggle {
+  display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;
+  color:var(--text-tertiary,#888);padding:4px 10px;border-radius:6px;
+  background:var(--bg-surface2,#f8f9fa);user-select:none;
+  transition:background .15s,color .15s;
+}
+.pn-thinking__toggle:hover{background:var(--bg-secondary,#eef0f2);color:var(--text-secondary,#666)}
+.pn-thinking__arrow{transition:transform .2s ease-out;font-size:10px;display:inline-block}
+
+.pn-thinking {
+  margin-top:6px;padding:10px 14px;border-radius:8px;
+  background:linear-gradient(135deg,var(--bg-secondary,#f9fafb) 0%,var(--bg-primary,#fff) 100%);
+  border-left:3px solid var(--accent,#c8a96e);
+  animation:pn-think-glow 2.4s ease-in-out infinite;
+  font-size:12px;color:var(--text-secondary,#666);line-height:1.75;
+  overflow:hidden;
+}
+@keyframes pn-think-glow {
+  0%,100%{border-color:var(--accent,#c8a96e);box-shadow:inset 0 0 0 0 rgba(200,169,110,.04)}
+  50%{border-color:rgba(200,169,110,.35);box-shadow:inset 0 0 12px 2px rgba(200,169,110,.06)}
+}
+
+.pn-thinking__text{white-space:pre-wrap;word-break:break-word}
+
+/* Blinking cursor during typewriter */
+.pn-thinking__cursor{
+  color:var(--accent,#c8a96e);font-weight:300;
+  animation:pn-cursor-blink .8s step-end infinite;
+  display:inline-block;margin-left:1px;
+}
+@keyframes pn-cursor-blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* Spinning indicator next to "思考过程" label during AI call */
+.pn-thinking__spinner{
+  width:10px;height:10px;border:1.5px solid var(--border,#ddd);
+  border-top-color:var(--accent,#c8a96e);border-radius:50%;
+  animation:pn-spin .6s linear infinite;
+  display:inline-block;flex-shrink:0;
+}
+@keyframes pn-spin{to{transform:rotate(360deg)}}
+
+/* ── Plan Card ─────────────────────────────────────────────── */
+
+.pn-plan-card{
+  background:var(--bg-surface2,#f8f9fa);border:1px solid var(--accent,#c8a96e);
+  border-radius:10px;padding:10px 14px;margin:6px 0;font-size:13px;
+  animation:pn-plan-in .3s ease-out;
+}
+@keyframes pn-plan-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.pn-plan-card__title{font-weight:600;margin-bottom:6px;font-size:14px;color:var(--text-primary,#333)}
+.pn-plan-card__step{display:flex;align-items:center;gap:8px;padding:3px 0}
+.pn-plan-card__dot{
+  width:18px;height:18px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:10px;flex-shrink:0;transition:background .3s;
+}
+.pn-plan-card__btn{
+  margin-top:8px;padding:5px 16px;border-radius:20px;border:none;
+  background:var(--accent,#c8a96e);color:#fff;cursor:pointer;font-size:12px;font-weight:500;
+  transition:transform .15s,opacity .15s;
+}
+.pn-plan-card__btn:hover{transform:scale(1.04);opacity:.9}
+.pn-plan-card__btn:active{transform:scale(.97)}
+
+/* ── Control Bar ───────────────────────────────────────────── */
+@keyframes pn-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.ac-bar{animation:pn-bar-in .2s ease-out}
+@keyframes pn-bar-in{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
