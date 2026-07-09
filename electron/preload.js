@@ -1,38 +1,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
-
 contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getAppPath:    () => ipcRenderer.invoke('get-app-path'),
   getPlatform:   () => ipcRenderer.invoke('get-platform'),
   getTheme:      () => ipcRenderer.invoke('get-theme'),
   openExternal:  (url) => ipcRenderer.invoke('open-external', url),
-
   minimize:          () => ipcRenderer.send('window-minimize'),
   maximize:          () => ipcRenderer.send('window-maximize'),
   close:             () => ipcRenderer.send('window-close'),
   setTitle:          (t) => ipcRenderer.send('set-title', t),
   toggleAlwaysOnTop: () => ipcRenderer.send('toggle-always-on-top'),
-
   showSaveDialog: (o) => ipcRenderer.invoke('show-save-dialog', o),
   showOpenDialog: (o) => ipcRenderer.invoke('show-open-dialog', o),
   showMessageBox: (o) => ipcRenderer.invoke('show-message-box', o),
-
   onMenuAction:     (ch, cb) => ipcRenderer.on(ch, (_, ...a) => cb(...a)),
   removeMenuAction: (ch, cb) => ipcRenderer.removeListener(ch, cb),
   onThemeChanged:   (cb) => ipcRenderer.on('theme-changed', (_, t) => cb(t)),
   onUpdateAvailable:(cb) => ipcRenderer.on('update-available', cb),
   onUpdateDownloaded:(cb)=> ipcRenderer.on('update-downloaded', cb),
-
   invoke: (channel, payload) => ipcRenderer.invoke(channel, payload),
-
-  // ── AI 流式响应 ──────────────────────────────────────
-  onStreamChunk: (cb) => {
-    ipcRenderer.on('ai:stream-chunk', (_, data) => cb(data));
-  },
-  removeStreamChunk: (cb) => {
-    ipcRenderer.removeListener('ai:stream-chunk', cb);
-  },
-
+  onStreamChunk: (cb) => { ipcRenderer.on('ai:stream-chunk', (_, data) => cb(data)); },
+  removeStreamChunk: (cb) => { ipcRenderer.removeListener('ai:stream-chunk', cb); },
   logger: {
     info:  (tag, message, data) => ipcRenderer.invoke('logger:write', { level: 'info',  tag, message, data }),
     warn:  (tag, message, data) => ipcRenderer.invoke('logger:write', { level: 'warn',  tag, message, data }),
@@ -41,9 +29,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPath: () => ipcRenderer.invoke('logger:get-path'),
     openDir: () => ipcRenderer.invoke('logger:open-dir'),
   },
-
-  send: (channel, ...args) => {
-    const allowed = ['flush-complete'];
-    if (allowed.includes(channel)) ipcRenderer.send(channel, ...args);
-  },
+  send: (channel, ...args) => { const allowed = ['flush-complete']; if (allowed.includes(channel)) ipcRenderer.send(channel, ...args); },
 });
