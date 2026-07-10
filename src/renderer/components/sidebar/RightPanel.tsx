@@ -5,7 +5,6 @@ import { setRightPanelTab, toggleRightPanel } from '../../store/slices/appSlice'
 import { PluginSidebarPanel } from '../../plugins/PluginSidebarPanel';
 import { ipc } from '../../utils/ipc';
 import { openTab, setView } from '../../store/slices/appSlice';
-import { AIPanel } from './AIPanel';
 
 interface RightPanelProps {
   documentId?: string;
@@ -241,9 +240,7 @@ export const RightPanel: React.FC<RightPanelProps> = React.memo(({ documentId })
         )}
 
         {/* AI */}
-        {rightPanelTab === 'ai' && (
-          <AIPanel documentContent={doc?.content ?? ''} />
-        )}
+{/* AIPanel removed — use ChatPanel in the panel grid instead */}
       </div>
     </div>
   );

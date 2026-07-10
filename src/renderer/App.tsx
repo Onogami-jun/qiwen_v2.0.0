@@ -30,7 +30,6 @@ import { SearchModal } from './components/modals/SearchModal';
 import './styles/globals.css';
 import { SettingsView } from './components/settings/SettingsView';
 import { PluginsView } from './plugins/PluginsView';
-import { AIPanel } from './components/sidebar/AIPanel';
 import { TemplatesView } from './components/templates/TemplatesView';
 import { HomeView } from './components/home/HomeView';
 import { SlidesView } from './components/slides/SlidesView';
@@ -630,7 +629,6 @@ const AIAssistantView: React.FC = () => (
       <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>基于豆包大模型，开箱即用</div>
     </div>
     <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' as const }}>
-      <AIPanel />
     </div>
   </div>
 );
