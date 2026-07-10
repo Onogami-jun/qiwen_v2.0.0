@@ -12,6 +12,7 @@ import {
 import { createDocument, updateDocument } from '../../store/slices/documentsSlice';
 import { setView, openTab } from '../../store/slices/appSlice';
 import { AiEditChatPanel } from './AiEditChatPanel';
+import { registerEditor, unregisterEditor } from '../panels/editorBridge';
 
 // ─────────────────────────────────────────────────────────────
 // 主题系统

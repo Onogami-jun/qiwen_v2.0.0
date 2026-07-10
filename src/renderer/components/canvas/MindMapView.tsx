@@ -7,6 +7,7 @@ import { openTab, setView } from '../../store/slices/appSlice';
 import { createPresentation, saveAllSlides } from '../../store/slices/presentationsSlice';
 import { RootState } from '../../store';
 import { MindMapAiEditPanel } from './MindMapAiEditPanel';
+import { registerEditor, unregisterEditor } from '../panels/editorBridge';
 
 
 
@@ -114,6 +115,18 @@ const MindMapEditor: React.FC<{ canvasId: string; title: string; onBack: () => v
       }
     }).catch(() => {});
   }, [canvasId]);
+  useEffect(() => {
+    registerEditor('mindmap', {
+      getText: () => JSON.stringify(map),
+      getHTML: () => JSON.stringify(map),
+      insert: (text: string) => { const id = uid(); setMap(prev => { const ns = { ...prev.nodes, [id]: { id, text, x: 0, y: 0, children: [] } }; if (prev.rootId) { ns[prev.rootId] = { ...ns[prev.rootId], children: [...ns[prev.rootId].children, id] }; } return layoutTree(ns, prev.rootId || id); }); return true; },
+      replaceAll: (h: string) => { try { const p = JSON.parse(h); setMap(p); return true; } catch { return false; } },
+      findAndReplace: (src: string, dst: string) => { let f = false; setMap(prev => { const ns = { ...prev.nodes }; Object.keys(ns).forEach(k => { if (ns[k].text && ns[k].text.includes(src)) { ns[k] = { ...ns[k], text: ns[k].text.split(src).join(dst) }; f = true; } }); return { ...prev, nodes: ns }; }); return f; },
+      getSelection: () => '',
+    });
+    return () => unregisterEditor('mindmap');
+  }, [map]);
+
 
   const save = useCallback((m: MindData, v: Vp) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -121,6 +134,18 @@ const MindMapEditor: React.FC<{ canvasId: string; title: string; onBack: () => v
       ipc.invoke('canvases:save', { id: canvasId, data: JSON.stringify({ ...m, viewport: v }) }).catch(() => {});
     }, 600);
   }, [canvasId]);
+  useEffect(() => {
+    registerEditor('mindmap', {
+      getText: () => JSON.stringify(map),
+      getHTML: () => JSON.stringify(map),
+      insert: (text: string) => { const id = uid(); setMap(prev => { const ns = { ...prev.nodes, [id]: { id, text, x: 0, y: 0, children: [] } }; if (prev.rootId) { ns[prev.rootId] = { ...ns[prev.rootId], children: [...ns[prev.rootId].children, id] }; } return layoutTree(ns, prev.rootId || id); }); return true; },
+      replaceAll: (h: string) => { try { const p = JSON.parse(h); setMap(p); return true; } catch { return false; } },
+      findAndReplace: (src: string, dst: string) => { let f = false; setMap(prev => { const ns = { ...prev.nodes }; Object.keys(ns).forEach(k => { if (ns[k].text && ns[k].text.includes(src)) { ns[k] = { ...ns[k], text: ns[k].text.split(src).join(dst) }; f = true; } }); return { ...prev, nodes: ns }; }); return f; },
+      getSelection: () => '',
+    });
+    return () => unregisterEditor('mindmap');
+  }, [map]);
+
 
   const update = (newNodes: Record<string, MindNode>) => {
     const laid = layoutTree(newNodes, map.rootId);

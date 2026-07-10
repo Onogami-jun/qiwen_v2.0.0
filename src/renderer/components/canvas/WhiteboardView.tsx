@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 import { ipc } from '../../utils/ipc';
 import { RootState } from '../../store';
 import { WhiteboardAiEditPanel } from './WhiteboardAiEditPanel';
+import { registerEditor, unregisterEditor } from '../panels/editorBridge';
 
 
 
@@ -46,6 +47,18 @@ const BoardEditor: React.FC<{ canvasId: string; title: string; onBack: () => voi
       try { const p = JSON.parse(d.data); setEls(p.elements || []); setVp(p.viewport || { x: 0, y: 0, zoom: 1 }); } catch {}
     }).catch(() => {});
   }, [canvasId]);
+  useEffect(() => {
+    registerEditor('whiteboard', {
+      getText: () => JSON.stringify({ elements: els }),
+      getHTML: () => JSON.stringify({ elements: els }),
+      insert: (text: string) => { try { setEls(p => [...p, { id: uid(), type: 'text', x: 100, y: 100, text, fs: 16, color, sw: 1 } as any]); return true; } catch { return false; } },
+      replaceAll: (h: string) => { try { setEls([]); return true; } catch { return false; } },
+      findAndReplace: (src: string, dst: string) => { let found = false; setEls(p => p.map(e => { if (e.type === 'text' && e.text && e.text.includes(src)) { found = true; return { ...e, text: e.text.split(src).join(dst) } as any; } return e; })); return found; },
+      getSelection: () => '',
+    });
+    return () => unregisterEditor('whiteboard');
+  }, [els]);
+
 
   const save = useCallback((e: El[], v: Vp) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -53,6 +66,18 @@ const BoardEditor: React.FC<{ canvasId: string; title: string; onBack: () => voi
       ipc.invoke('canvases:save', { id: canvasId, data: JSON.stringify({ elements: e, viewport: v }) }).catch(() => {});
     }, 600);
   }, [canvasId]);
+  useEffect(() => {
+    registerEditor('whiteboard', {
+      getText: () => JSON.stringify({ elements: els }),
+      getHTML: () => JSON.stringify({ elements: els }),
+      insert: (text: string) => { try { setEls(p => [...p, { id: uid(), type: 'text', x: 100, y: 100, text, fs: 16, color, sw: 1 } as any]); return true; } catch { return false; } },
+      replaceAll: (h: string) => { try { setEls([]); return true; } catch { return false; } },
+      findAndReplace: (src: string, dst: string) => { let found = false; setEls(p => p.map(e => { if (e.type === 'text' && e.text && e.text.includes(src)) { found = true; return { ...e, text: e.text.split(src).join(dst) } as any; } return e; })); return found; },
+      getSelection: () => '',
+    });
+    return () => unregisterEditor('whiteboard');
+  }, [els]);
+
 
   const upd = (newEls: El[]) => { setEls(newEls); save(newEls, vp); };
 
