@@ -1,5 +1,5 @@
 /**
- * ChatPanel — AI Agent v7 (stable non-streaming + forced actions + auto-insert)
+ * ChatPanel — AI Agent v8 (real streaming + auto editor insert)
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
@@ -14,43 +14,29 @@ import * as Bridge from './editorBridge';
 import ActionConfirm from './ActionConfirm';
 import AgentControlBar, { type ControlBarState } from './AgentControlBar';
 
-/* ── Strong Agent Prompt ───────────────────────────────────── */
 const AP = [
-  '你是启文（QiWen Writer）的内置 AI 写作助手。你必须使用 <action> 标签来操作编辑器。',
+  '你是启文的内置 AI 写作助手。你必须使用 <action> 标签把写作内容写入编辑器。',
   '',
   '## 核心规则',
-  '1. 你生成的写作内容必须放在 <action type="append"> 标签里，这样内容才会出现在用户的编辑器中',
-  '2. 永远不要只把内容写在对话里就结束——你必须同时用 action 标签把内容写入编辑器',
-  '3. 生成文章时：先告知用户你要做什么，然后立刻用 action 标签写入编辑器',
+  '1. 生成的写作内容必须放在 <action type="append" title="节标题">内容</action> 标签里。',
+  '2. 如果你只是写一段话没有 action 标签，内容会只在对话里显示而不能写入编辑器。',
+  '3. 生成文章时：先告知用户，然后立即用 append action 把内容写入编辑器。',
   '',
-  '## Action 格式',
-  '- 追加内容到文档末尾：<action type="append" title="节标题">内容</action>',
-  '- 光标处插入：<action type="insert">内容</action>',
-  '- 替换原文片段：<action type="replace" target="原文">新内容</action>',
-  '- 改写段落：<action type="rewrite" target="段落关键词">改写内容</action>',
-  '- 删除：<action type="delete" target="原文片段"></action>',
-  '',
-  '## 任务计划格式',
-  '<plan><title>标题</title><step id="1">第一步</step><step id="2">第二步</step></plan>',
-  '',
-  '## 思考过程',
-  '<thinking>你的思考过程...</thinking>',
+  '## 可用 Action',
+  '<action type="append" title="标题">内容</action>  — 追加到编辑器末尾',
+  '<action type="insert">内容</action>           — 光标处插入',
+  '<action type="replace" target="原文">新内容</action> — 替换',
+  '<action type="rewrite" target="关键词">新内容</action> — 改写',
+  '<action type="delete" target="原文"></action> — 删除',
   '',
   '## 示例',
-  '用户说"写一篇200字的产品介绍"，你的正确回复：',
-  '好的，我来写一篇产品介绍。',
+  '<thinking>用户要写产品介绍，我需要生成一段完整的介绍文案</thinking>',
+  '好的，这是产品介绍：',
   '<action type="append" title="产品介绍">',
   '本公司最新产品XXX，采用先进技术打造，具有以下特点：',
-  '1. 高效性能',
-  '2. 优雅设计',
-  '3. 便捷操作',
+  '1. 高效性能  2. 优雅设计  3. 便捷操作',
   '</action>',
   '已写入编辑器，你可以查看和修改。',
-  '',
-  '## 重要',
-  '- 自动模式：Append 和 Insert 自动执行，不弹确认框',
-  '- 非自动模式：Replace/Rewrite/Delete 需用户确认',
-  '- 保持 Markdown 格式'
 ].join('\n');
 
 const THINK_MSGS = ['分析需求…','构思方案…','生成内容…','检查润色…'];
@@ -71,7 +57,6 @@ function renderMD(text: string): string {
   h = h.replace(/^[-*]\s+(.+)$/gm,'<li>$1</li>'); h = h.replace(/((?:<li>.*<\/li>\n?)+)/g,'<ul>$1</ul>');
   return h.split(/\n\n+/).map(function(b:string){ var t=b.trim(); if(!t)return''; if(t.indexOf('<pre>')===0||t.indexOf('<ul>')===0)return t; return '<p>'+t.replace(/\n/g,'<br/>')+'</p>'; }).join('\n');
 }
-
 const SendIcon: React.FC = () => (<svg className="pn-chat__send-icon" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 5.5L2 14l3-6.5L2 2z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/></svg>);
 const EmptyIcon: React.FC = () => (<svg className="pn-chat__empty-icon" viewBox="0 0 48 48" fill="none"><rect x="6" y="8" width="36" height="28" rx="4" stroke="currentColor" strokeWidth="2"/><circle cx="16" cy="22" r="3" fill="currentColor"/><circle cx="24" cy="22" r="3" fill="currentColor"/><circle cx="32" cy="22" r="3" fill="currentColor"/></svg>);
 
@@ -80,17 +65,15 @@ const ThinkingBlock: React.FC<{content:string}> = function(p: {content:string}) 
   useEffect(function(){ if(prev.current!==c){setPos(0);setOpen(true);prev.current=c;} },[c]);
   useEffect(function(){ if(done||!open)return; var t=setTimeout(function(){setPos(function(x:number){return Math.min(x+5,c.length)});},10); return function(){clearTimeout(t)}; },[pos,c.length,done,open]);
   useEffect(function(){ if(!done||!open)return; var t=setTimeout(function(){setOpen(false)},5000); return function(){clearTimeout(t)}; },[done,open]);
-  var text=c.slice(0,pos);
-  return (<div style={{margin:'6px 0'}}><div onClick={function(){setOpen(function(v:boolean){return!v})}} className="pn-thinking__toggle"><span className="pn-thinking__arrow" style={{transform:open?'rotate(90deg)':'none'}}>{'▶'}</span>{'思考过程'}{!done&&<span className="pn-thinking__spinner"/>}</div>{open&&<div className="pn-thinking"><div className="pn-thinking__text">{text}{!done&&<span className="pn-thinking__cursor">{'|'}</span>}</div></div>}</div>);
+  return (<div style={{margin:'6px 0'}}><div onClick={function(){setOpen(function(v:boolean){return!v})}} className="pn-thinking__toggle"><span className="pn-thinking__arrow" style={{transform:open?'rotate(90deg)':'none'}}>{'▶'}</span>{'思考过程'}{!done&&<span className="pn-thinking__spinner"/>}</div>{open&&<div className="pn-thinking"><div className="pn-thinking__text">{c.slice(0,pos)}{!done&&<span className="pn-thinking__cursor">{'|'}</span>}</div></div>}</div>);
 };
-const StreamingBanner: React.FC<{tick:number}> = function(p:{tick:number}) { var idx=p.tick%THINK_MSGS.length; return (<div className="pn-live-thinking"><div className="pn-live-thinking__pulse"/><span className="pn-live-thinking__text">{THINK_MSGS[idx]}</span></div>); };
+const StreamingBanner: React.FC<{tick:number}> = function(p:{tick:number}) { return (<div className="pn-live-thinking"><div className="pn-live-thinking__pulse"/><span className="pn-live-thinking__text">{THINK_MSGS[p.tick%THINK_MSGS.length]}</span></div>); };
 const PlanCard: React.FC<{title:string;steps:AgentStep[];onStart:()=>void}> = function(p:{title:string;steps:AgentStep[];onStart:()=>void}) {
   return (<div className="pn-plan-card"><div className="pn-plan-card__title">{'📋 '+p.title}</div>{p.steps.map(function(s:AgentStep){return(<div key={s.id} className="pn-plan-card__step" style={{opacity:s.status==='done'?0.5:1}}><span className="pn-plan-card__dot" style={{background:s.status==='done'?'var(--color-success)':s.status==='doing'?'var(--accent)':'var(--border)',color:s.status!=='pending'?'#fff':'var(--text-tertiary)'}}>{s.status==='done'?'✓':s.status==='doing'?'▶':s.id}</span><span style={{color:'var(--text-secondary)',textDecoration:s.status==='done'?'line-through':'none'}}>{s.title}</span></div>)})}<button className="pn-plan-card__btn" onClick={p.onStart}>开始执行</button></div>);
 };
-
 const MsgBubble: React.FC<{msg:ChatMessage;isLast:boolean;onPlanStart:()=>void;onAccept:(a:ParsedAction)=>void;onReject:(a:ParsedAction)=>void;pendingId:string|null}> = function(p:{msg:ChatMessage;isLast:boolean;onPlanStart:()=>void;onAccept:(a:ParsedAction)=>void;onReject:(a:ParsedAction)=>void;pendingId:string|null}) {
   var msg=p.msg, isU=msg.role==='user', meta:any=msg.meta;
-  var time=(function(){ try{return new Date(msg.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})} catch(ex){return''} })();
+  var time=(function(){ try{return new Date(msg.createdAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})} catch(e){return''} })();
   var actions:any[]=useMemo(function(){return(meta&&meta.actions)||[]},[meta]);
   return (<div className={'pn-chat-msg pn-chat-msg--'+msg.role}><div className="pn-chat-msg__avatar">{isU?'我':'AI'}</div><div style={{minWidth:0}}>
     {!isU&&meta&&meta.thinking&&<ThinkingBlock content={meta.thinking}/>}
@@ -110,64 +93,98 @@ const ChatPanel: React.FC<Props> = function(p:Props) {
   var docId: string = rawId || '';
   var sm=useState<ChatMessage[]>([]);var msgs=sm[0];var setMsgs=sm[1];var si=useState('');var input=si[0];var setInput=si[1];var ss=useState(false);var streaming=ss[0];var setStreaming=ss[1];var sa=useState(false);var autoMode=sa[0];var setAutoMode=sa[1];var sl=useState(false);var loaded=sl[0];var setLoaded=sl[1];var sp=useState<string|null>(null);var pendingActionId=sp[0];var setPendingActionId=sp[1];var sc=useState<ControlBarState>({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0});var cbState=sc[0];var setCbState=sc[1];var endRef=useRef<HTMLDivElement>(null);var autoRef=useRef(autoMode);autoRef.current=autoMode;var msgsRef=useRef(msgs);msgsRef.current=msgs;var tickRef=useRef(0);var st=useState(-1);var liveTicker=st[0];var setLiveTicker=st[1];
 
-  useEffect(function(){ Bridge.registerEditor('document',{getText:function():string{return(getDocumentContent&&getDocumentContent())||''},getHTML:function():string{return(getDocumentContent&&getDocumentContent())||''},insert:function(c:string):boolean{var ed=(window as any).__activeEditor;if(ed){try{ed.chain().focus().insertContent(c).run();return true}catch(ex){return false}}return false},replaceAll:function(h:string):boolean{var ed=(window as any).__activeEditor;if(ed){try{ed.chain().focus().selectAll().insertContent(h).run();return true}catch(ex){return false}}return false},findAndReplace:function(s:string,r:string):boolean{var ed=(window as any).__activeEditor;if(!ed)return false;try{var t=ed.getText()||'';if(t.indexOf(s)>=0){var nh=(ed.getHTML()||'').split(s).join(r);ed.chain().focus().selectAll().insertContent(nh).run();return true}}catch(ex){}try{ed.chain().focus().insertContent(r).run();return true}catch(ex){return false}},getSelection:function():string{try{return''}catch(ex){return''}}}); return function(){Bridge.unregisterEditor('document')} },[getDocumentContent]);
-  useEffect(function(){if(!docId||loaded)return;var c2=false;(async function(){try{var rows=await ipc.invoke<any[]>('db:getChatMessages',{documentId:docId,limit:100});if(!c2&&rows&&rows.length)setMsgs(rows.map(function(r:any){return{id:r.id,documentId:r.document_id||r.documentId,role:r.role,content:r.content,createdAt:r.created_at||r.createdAt,meta:typeof r.meta==='string'?JSON.parse(r.meta||'{}'):(r.meta||undefined)}}))}catch(ex){}finally{if(!c2)setLoaded(true)}})();return function(){c2=true}},[docId,loaded]);
+  useEffect(function(){ Bridge.registerEditor('document',{getText:function():string{return(getDocumentContent&&getDocumentContent())||''},getHTML:function():string{return(getDocumentContent&&getDocumentContent())||''},insert:function(c:string):boolean{var ed=(window as any).__activeEditor;if(ed){try{ed.chain().focus().insertContent(c).run();return true}catch(e){return false}}return false},replaceAll:function(h:string):boolean{var ed=(window as any).__activeEditor;if(ed){try{ed.chain().focus().selectAll().insertContent(h).run();return true}catch(e){return false}}return false},findAndReplace:function(s:string,r:string):boolean{var ed=(window as any).__activeEditor;if(!ed)return false;try{var t=ed.getText()||'';if(t.indexOf(s)>=0){var nh=(ed.getHTML()||'').split(s).join(r);ed.chain().focus().selectAll().insertContent(nh).run();return true}}catch(e){}try{ed.chain().focus().insertContent(r).run();return true}catch(e){return false}},getSelection:function():string{try{return''}catch(e){return''}}}); return function(){Bridge.unregisterEditor('document')} },[getDocumentContent]);
+  useEffect(function(){if(!docId||loaded)return;var c2=false;(async function(){try{var rows=await ipc.invoke<any[]>('db:getChatMessages',{documentId:docId,limit:100});if(!c2&&rows&&rows.length)setMsgs(rows.map(function(r:any){return{id:r.id,documentId:r.document_id||r.documentId,role:r.role,content:r.content,createdAt:r.created_at||r.createdAt,meta:typeof r.meta==='string'?JSON.parse(r.meta||'{}'):(r.meta||undefined)}}))}catch(e){}finally{if(!c2)setLoaded(true)}})();return function(){c2=true}},[docId,loaded]);
   useEffect(function(){if(endRef.current)endRef.current.scrollIntoView({behavior:'smooth'})},[msgs]);
-  var persist=useCallback(async function(m:ChatMessage){try{await ipc.invoke('db:saveChatMessage',m)}catch(ex){}},[]);
+  var persist=useCallback(async function(m:ChatMessage){try{await ipc.invoke('db:saveChatMessage',m)}catch(e){}},[]);
   useEffect(function(){if(!streaming){setLiveTicker(-1);tickRef.current=0;return}setLiveTicker(0);var timer=setInterval(function(){tickRef.current=(tickRef.current+1)%THINK_MSGS.length;setLiveTicker(tickRef.current)},2200);return function(){clearInterval(timer)}},[streaming]);
 
-  /* ── AI Call (non-streaming, known working) ─────────────── */
-  var callAi = useCallback(async function(toSend: ChatMessage[]): Promise<string> {
+  /* ── STREAMING AI call ──────────────────────────────────── */
+  var callAi = useCallback(async function(toSend: ChatMessage[], placeholderId: string): Promise<string> {
     setStreaming(true);setCbState(function(p2:ControlBarState):ControlBarState{return{visible:true,status:'thinking' as const,currentStep:p2.currentStep,totalSteps:p2.totalSteps,completedSteps:p2.completedSteps}});
-    try {
-      var d=(getDocumentContent&&getDocumentContent())||'';var pref=await buildSystemPrompt();
-      var sysParts=[pref,AP];if(d)sysParts.push('\n当前文档：\n'+d.slice(0,3000));if(autoRef.current)sysParts.push('\n自动模式。');
-      var recent=toSend.slice(-25).map(function(m:ChatMessage){return{role:m.role,content:m.content}});
-      var msgs2=[{role:'system',content:sysParts.filter(Boolean).join('\n')},...recent];
-      var resp = await ipc.invoke<any>('ai:chat-stream',{messages:msgs2,apiKey:'',model:''});
-      var content = typeof resp==='string'?resp:(resp?.content||resp?.text||JSON.stringify(resp));
-      setCbState(function(p3:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p3.currentStep,totalSteps:p3.totalSteps,completedSteps:p3.completedSteps}});
-      return content;
-    } finally { setStreaming(false); }
+    return new Promise<string>(function(resolve, reject){
+      (async function(){
+        try {
+          var d=(getDocumentContent&&getDocumentContent())||'';var pref=await buildSystemPrompt();
+          var sysParts=[pref,AP];if(d)sysParts.push('\n当前文档：\n'+d.slice(0,3000));if(autoRef.current)sysParts.push('\n自动模式。');
+          var recent=toSend.slice(-25).map(function(m:ChatMessage){return{role:m.role,content:m.content}});
+          var msgs2=[{role:'system',content:sysParts.filter(Boolean).join('\n')},...recent];
+
+          // Try streaming first
+          var onChunk = function(data:{content:string;full:string}) {
+            Bridge.showEditorBanner('生成中…');
+            setMsgs(function(prev:ChatMessage[]){var copy=prev.slice();for(var j=copy.length-1;j>=0;j--){if(copy[j].id===placeholderId){copy[j]={id:copy[j].id,documentId:copy[j].documentId,role:'assistant',content:data.full,createdAt:copy[j].createdAt,meta:{pureContent:data.full,kind:'normal'}};break}}return copy});
+          };
+
+          var fc: string;
+          try {
+            if (window.electronAPI && window.electronAPI.onStreamChunk) window.electronAPI.onStreamChunk(onChunk);
+            fc = await ipc.invoke<string>('ai:chat-stream-v2',{messages:msgs2,apiKey:'',model:''});
+          } catch(ex) {
+            // Fallback to non-streaming
+            var resp = await ipc.invoke<any>('ai:chat-stream',{messages:msgs2,apiKey:'',model:''});
+            fc = typeof resp==='string'?resp:(resp?.content||resp?.text||JSON.stringify(resp));
+          }
+          finally { if (window.electronAPI && window.electronAPI.removeStreamChunk) window.electronAPI.removeStreamChunk(onChunk); }
+
+          Bridge.hideEditorBanner();
+          setCbState(function(p3:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p3.currentStep,totalSteps:p3.totalSteps,completedSteps:p3.completedSteps}});
+          resolve(fc);
+        } catch(err:any) { Bridge.hideEditorBanner(); reject(err); }
+        finally { setStreaming(false); }
+      })();
+    });
   }, [getDocumentContent]);
 
-  /* ── Execute Actions ──────────────────────────────────────── */
-  var execActions=useCallback(function(actions:ParsedAction[]):string[]{var results:string[]=[];for(var i=0;i<actions.length;i++){var a=actions[i];if(getSafety(a.type)!=='safe'&&!autoRef.current)continue;var r:Bridge.ActionResult={success:false,message:''};Bridge.showEditorBanner((a.type==='append'?'追加中':a.type==='insert'?'插入中':a.type==='replace'?'替换中':a.type==='rewrite'?'改写中':a.type==='delete'?'删除中':'操作中')+'…');var st=Date.now();switch(a.type){case'append':r=Bridge.actionAppend(a.payload.title||'',a.content);break;case'insert':r=Bridge.actionInsert(a.content);break;case'replace':r=Bridge.actionReplace(a.payload.target||'',a.content);break;case'rewrite':r=Bridge.actionRewrite(a.payload.target||'',a.content);break;case'delete':r=Bridge.actionDelete(a.payload.target||'');break}var elapsed=Date.now()-st;if(elapsed<600)setTimeout(function(){Bridge.hideEditorBanner()},600-elapsed);else Bridge.hideEditorBanner();if(r.message)results.push(r.success?r.message:'FAIL:'+r.message);setCbState(function(p4:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:r.message,totalSteps:p4.totalSteps,completedSteps:p4.completedSteps}})}return results},[]);
+  var execActions=useCallback(function(actions:ParsedAction[]):string[]{
+    var results:string[]=[];
+    for(var i=0;i<actions.length;i++){
+      var a=actions[i];if(getSafety(a.type)!=='safe'&&!autoRef.current)continue;
+      var r:Bridge.ActionResult={success:false,message:''};
+      Bridge.showEditorBanner((a.type==='append'?'追加中':a.type==='insert'?'插入中':'操作中')+'…');
+      var st=Date.now();
+      switch(a.type){case'append':r=Bridge.actionAppend(a.payload.title||'',a.content);break;case'insert':r=Bridge.actionInsert(a.content);break;case'replace':r=Bridge.actionReplace(a.payload.target||'',a.content);break;case'rewrite':r=Bridge.actionRewrite(a.payload.target||'',a.content);break;case'delete':r=Bridge.actionDelete(a.payload.target||'');break}
+      var el=Date.now()-st;if(el<600)setTimeout(function(){Bridge.hideEditorBanner()},600-el);else Bridge.hideEditorBanner();
+      if(r.message)results.push(r.success?r.message:'FAIL:'+r.message);
+      setCbState(function(p4:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:r.message,totalSteps:p4.totalSteps,completedSteps:p4.completedSteps}})
+    }
+    return results
+  },[]);
 
   function processResponse(raw:string):ChatMessage {
     var parsed=parseTags(raw);
     var meta:any={pureContent:parsed.pure,kind:parsed.plan?'plan':parsed.thinking?'thinking':'normal'};
-    if(parsed.plan)meta.plan=parsed.plan;
-    if(parsed.thinking)meta.thinking=parsed.thinking;
+    if(parsed.plan)meta.plan=parsed.plan;if(parsed.thinking)meta.thinking=parsed.thinking;
 
-    // If no actions parsed but response is long (likely generated content), auto-create append action
+    // Auto-insert: if AI returned long content without actions, push it to editor
     var actions = parsed.actions;
-    if (actions.length === 0 && !parsed.plan && !parsed.thinking && parsed.pure.length > 100) {
-      // AI forgot to use action tags — auto-insert the pure content into editor
-      var r = Bridge.actionInsert(parsed.pure);
-      meta.actionResults = [r.success ? r.message : 'FAIL:'+r.message];
+    if (actions.length===0 && !parsed.plan && !parsed.thinking && parsed.pure.length>80) {
+      var rr = Bridge.actionInsert(parsed.pure);
+      meta.actionResults = [rr.success?rr.message:'FAIL:'+rr.message];
     }
 
     var confirm=actions.filter(function(a:ParsedAction){return getSafety(a.type)==='confirm'&&!autoRef.current});
     if(confirm.length)meta.actions=confirm;
     var executable=actions.filter(function(a:ParsedAction){return getSafety(a.type)==='safe'||(autoRef.current&&getSafety(a.type)==='confirm')});
-    if(executable.length){var results=execActions(executable);if(results.length)meta.actionResults=results;setCbState(function(p5:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p5.currentStep,totalSteps:p5.totalSteps,completedSteps:p5.completedSteps+executable.length}})}
+    if(executable.length){var r2=execActions(executable);if(r2.length)meta.actionResults=r2;setCbState(function(p5:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p5.currentStep,totalSteps:p5.totalSteps,completedSteps:p5.completedSteps+executable.length}})}
     return{id:msgId(),documentId:docId,role:'assistant',content:raw,createdAt:new Date().toISOString(),meta:meta}
   }
 
-  var send = useCallback(async function(){
+  var send=useCallback(async function(){
     var t=input.trim();if(!t||streaming||!docId)return;setInput('');
     if(t.indexOf('自动模式')>=0)setAutoMode(true);if(t.indexOf('停止自动')>=0||t.indexOf('取消自动')>=0){setAutoMode(false);setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}
-    var um:ChatMessage={id:msgId(),documentId:docId,role:'user',content:t,createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([um]);setMsgs(cur);persist(um);
-    try{var fc=await callAi(cur);var finalMsg=processResponse(fc);setMsgs(function(prev:ChatMessage[]){return prev.concat([finalMsg])});persist(finalMsg);if(autoRef.current&&(finalMsg.meta as any)&&(finalMsg.meta as any).plan)setTimeout(function(){autoContinue(finalMsg)},1200);else if(!autoRef.current)setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}
-    catch(err:any){setMsgs(function(prev:ChatMessage[]){return prev.concat([{id:msgId(),documentId:docId,role:'assistant',content:'FAIL:'+((err&&err.message)||'unknown'),createdAt:new Date().toISOString(),meta:{kind:'normal',pureContent:'FAIL:'+((err&&err.message)||'unknown')}}])});setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}
+    var um:ChatMessage={id:msgId(),documentId:docId,role:'user',content:t,createdAt:new Date().toISOString()};
+    var phId=msgId();var ph:ChatMessage={id:phId,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};
+    var cur=msgsRef.current.concat([um,ph]);setMsgs(cur);persist(um);
+    try{var fc=await callAi(cur,phId);var fm=processResponse(fc);fm.id=phId;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId){n[j]=fm;break}}return n});persist(fm);if(autoRef.current&&(fm.meta as any)&&(fm.meta as any).plan)setTimeout(function(){autoContinue(fm)},1200);else if(!autoRef.current)setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}
+    catch(err:any){setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId){n[j]={id:phId,documentId:docId,role:'assistant',content:'FAIL:'+((err&&err.message)||'unknown'),createdAt:new Date().toISOString(),meta:{kind:'normal',pureContent:'FAIL:'+((err&&err.message)||'unknown')}};break}}return n});setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}
   },[input,streaming,docId,persist,callAi]);
 
-  var autoContinue=useCallback(async function(lastMsg:ChatMessage){if(!autoRef.current||!docId)return;var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'继续下一步',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm]);setMsgs(cur);persist(cm);try{var fc2=await callAi(cur);var fm2=processResponse(fc2);setMsgs(function(prev:ChatMessage[]){return prev.concat([fm2])});persist(fm2);if(autoRef.current){var mp=(fm2.meta as any)&&(fm2.meta as any).plan,ad=!mp||((mp.steps||[]) as AgentStep[]).every(function(s:AgentStep){return s.status==='done'});if(ad){setAutoMode(false);setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}else setTimeout(function(){autoContinue(fm2)},1500)}}catch(ex){setAutoMode(false);setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}},[docId,callAi,persist]);
-  var startPlan=useCallback(async function(){if(streaming||!docId)return;var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'开始执行计划',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm]);setMsgs(cur);persist(cm);var lm=msgsRef.current.length>0?((msgsRef.current[msgsRef.current.length-1]||{}).meta as any):null,plan=lm&&lm.plan;if(plan)setCbState({visible:true,status:'executing' as const,currentStep:(plan.steps[0]&&plan.steps[0].title)||'',totalSteps:plan.steps.length,completedSteps:0});try{var fc3=await callAi(cur);var fm3=processResponse(fc3);setMsgs(function(prev:ChatMessage[]){return prev.concat([fm3])});persist(fm3);if(!autoRef.current)setCbState({visible:false,status:'idle' as const,currentStep:'',totalSteps:0,completedSteps:0})}catch(ex){}},[streaming,docId,persist,callAi]);
-  var acceptAction=useCallback(async function(action:ParsedAction){setPendingActionId(action.type+'-'+Date.now());var r:Bridge.ActionResult={success:false,message:''};switch(action.type){case'replace':r=Bridge.actionReplace(action.payload.target||'',action.content);break;case'rewrite':r=Bridge.actionRewrite(action.payload.target||'',action.content);break;case'delete':r=Bridge.actionDelete(action.payload.target||'');break}setPendingActionId(null);var fb:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'操作已完成：'+r.message+'。继续下一步',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([fb]);setMsgs(cur);persist(fb);try{var fc4=await callAi(cur);var fm4=processResponse(fc4);setMsgs(function(prev:ChatMessage[]){return prev.concat([fm4])});persist(fm4)}catch(ex){}},[docId,persist,callAi]);
-  var rejectAction=useCallback(async function(_action:ParsedAction){var fb:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'拒绝了。请提供替代方案。',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([fb]);setMsgs(cur);persist(fb);try{var fc5=await callAi(cur);var fm5=processResponse(fc5);setMsgs(function(prev:ChatMessage[]){return prev.concat([fm5])});persist(fm5)}catch(ex){}},[docId,persist,callAi]);
-  var handleControlOverride=useCallback(async function(instr:string){var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'（打断）'+instr,createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm]);setMsgs(cur);persist(cm);try{var fc6=await callAi(cur);var fm6=processResponse(fc6);setMsgs(function(prev:ChatMessage[]){return prev.concat([fm6])});persist(fm6);setCbState(function(p6:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p6.currentStep,totalSteps:p6.totalSteps,completedSteps:p6.completedSteps}})}catch(ex){}},[docId,persist,callAi]);
+  var autoContinue=useCallback(async function(lastMsg:ChatMessage){if(!autoRef.current||!docId)return;var phId2=msgId();var ph2:ChatMessage={id:phId2,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'继续下一步',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm,ph2]);setMsgs(cur);persist(cm);try{var fc2=await callAi(cur,phId2);var fm2=processResponse(fc2);fm2.id=phId2;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId2){n[j]=fm2;break}}return n});persist(fm2);if(autoRef.current){var mp=(fm2.meta as any)&&(fm2.meta as any).plan,ad=!mp||((mp.steps||[])as AgentStep[]).every(function(s:AgentStep){return s.status==='done'});if(ad){setAutoMode(false);setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}else setTimeout(function(){autoContinue(fm2)},1500)}}catch(e){setAutoMode(false);setCbState({visible:false,status:'idle',currentStep:'',totalSteps:0,completedSteps:0})}},[docId,callAi,persist]);
+  var startPlan=useCallback(async function(){if(streaming||!docId)return;var phId3=msgId();var ph3:ChatMessage={id:phId3,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'开始执行计划',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm,ph3]);setMsgs(cur);persist(cm);var lm=msgsRef.current.length>0?((msgsRef.current[msgsRef.current.length-1]||{}).meta as any):null,plan=lm&&lm.plan;if(plan)setCbState({visible:true,status:'executing' as const,currentStep:(plan.steps[0]&&plan.steps[0].title)||'',totalSteps:plan.steps.length,completedSteps:0});try{var fc3=await callAi(cur,phId3);var fm3=processResponse(fc3);fm3.id=phId3;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId3){n[j]=fm3;break}}return n});persist(fm3);if(!autoRef.current)setCbState({visible:false,status:'idle' as const,currentStep:'',totalSteps:0,completedSteps:0})}catch(e){}},[streaming,docId,persist,callAi]);
+  var acceptAction=useCallback(async function(action:ParsedAction){setPendingActionId(action.type+'-'+Date.now());var r:Bridge.ActionResult={success:false,message:''};switch(action.type){case'replace':r=Bridge.actionReplace(action.payload.target||'',action.content);break;case'rewrite':r=Bridge.actionRewrite(action.payload.target||'',action.content);break;case'delete':r=Bridge.actionDelete(action.payload.target||'');break}setPendingActionId(null);var phId4=msgId();var ph4:ChatMessage={id:phId4,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};var fb:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'操作已完成：'+r.message+'。继续下一步',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([fb,ph4]);setMsgs(cur);persist(fb);try{var fc4=await callAi(cur,phId4);var fm4=processResponse(fc4);fm4.id=phId4;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId4){n[j]=fm4;break}}return n});persist(fm4)}catch(e){}},[docId,persist,callAi]);
+  var rejectAction=useCallback(async function(_action:ParsedAction){var phId5=msgId();var ph5:ChatMessage={id:phId5,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};var fb:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'拒绝了。请提供替代方案。',createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([fb,ph5]);setMsgs(cur);persist(fb);try{var fc5=await callAi(cur,phId5);var fm5=processResponse(fc5);fm5.id=phId5;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId5){n[j]=fm5;break}}return n});persist(fm5)}catch(e){}},[docId,persist,callAi]);
+  var handleControlOverride=useCallback(async function(instr:string){var phId6=msgId();var ph6:ChatMessage={id:phId6,documentId:docId,role:'assistant',content:'',createdAt:new Date().toISOString(),meta:{pureContent:'',kind:'normal'}};var cm:ChatMessage={id:msgId(),documentId:docId,role:'user',content:'（打断）'+instr,createdAt:new Date().toISOString()};var cur=msgsRef.current.concat([cm,ph6]);setMsgs(cur);persist(cm);try{var fc6=await callAi(cur,phId6);var fm6=processResponse(fc6);fm6.id=phId6;setMsgs(function(prev:ChatMessage[]){var n=prev.slice();for(var j=n.length-1;j>=0;j--){if(n[j].id===phId6){n[j]=fm6;break}}return n});persist(fm6);setCbState(function(p6:ControlBarState):ControlBarState{return{visible:true,status:'executing' as const,currentStep:p6.currentStep,totalSteps:p6.totalSteps,completedSteps:p6.completedSteps}})}catch(e){}},[docId,persist,callAi]);
 
   var onKeyDown=useCallback(function(e:React.KeyboardEvent){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}},[send]);
   var msgList=useMemo(function(){return msgs.map(function(m:ChatMessage,i:number){return<MsgBubble key={m.id} msg={m} isLast={i===msgs.length-1} onPlanStart={startPlan} onAccept={acceptAction} onReject={rejectAction} pendingId={pendingActionId}/>})},[msgs,startPlan,acceptAction,rejectAction,pendingActionId]);
