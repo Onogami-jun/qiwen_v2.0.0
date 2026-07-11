@@ -1,4 +1,4 @@
-/** editorBridge — polished */
+/** editorBridge — polished feedback */
 export interface EditorOps { getText(): string; getHTML(): string; insert(c: string): boolean; replaceAll(h: string): boolean; findAndReplace(s: string, r: string): boolean; getSelection(): string; }
 type ET = 'document' | 'ppt' | 'whiteboard' | 'mindmap'; const reg = new Map<ET, EditorOps>();
 export function registerEditor(t: ET, o: EditorOps): void { reg.set(t, o) } export function unregisterEditor(t: ET): void { reg.delete(t) }
